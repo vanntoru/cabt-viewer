@@ -1,5 +1,6 @@
-<script lang="ts">
-  import type { CardView } from '../game/types';
+	<script lang="ts">
+	  import type { CardView } from '../game/types';
+	  import { cardPreviewStore } from '../../state/cardPreview.svelte';
 
   type Props = {
     card?: CardView;
@@ -10,11 +11,12 @@
     interactive?: boolean;
     faceDown?: boolean;
     playable?: boolean;
-    damage?: number;
-    testId?: string;
-    onclick?: (event: MouseEvent) => void;
-    ondragstart?: (event: DragEvent) => void;
-    ondragend?: (event: DragEvent) => void;
+	    damage?: number;
+	    testId?: string;
+	    previewable?: boolean;
+	    onclick?: (event: MouseEvent) => void;
+	    ondragstart?: (event: DragEvent) => void;
+	    ondragend?: (event: DragEvent) => void;
   };
 
   let {
@@ -26,19 +28,21 @@
     interactive = false,
     faceDown = false,
     playable = false,
-    damage = 0,
-    testId = '',
-    onclick,
-    ondragstart,
-    ondragend,
-  }: Props = $props();
+	    damage = 0,
+	    testId = '',
+	    previewable = false,
+	    onclick,
+	    ondragstart,
+	    ondragend,
+	  }: Props = $props();
 
-  let failedImageUrl = $state('');
+	  let failedImageUrl = $state('');
 
-  let imageUrl = $derived(faceDown ? '/assets/cardback.png' : card?.imageUrl);
-  let lastImageUrl = $state<string | undefined>();
-  let showImage = $derived(!!imageUrl && failedImageUrl !== imageUrl);
-  let label = $derived(faceDown ? 'Card' : (card?.name ?? 'Empty'));
+	  let imageUrl = $derived(faceDown ? '/assets/cardback.png' : card?.imageUrl);
+	  let lastImageUrl = $state<string | undefined>();
+	  let showImage = $derived(!!imageUrl && failedImageUrl !== imageUrl);
+	  let canPreview = $derived(previewable && !!card && !faceDown && !!imageUrl && failedImageUrl !== imageUrl);
+	  let label = $derived(faceDown ? 'カード' : (card?.name ?? '空き'));
   let typeClass = $derived(faceDown
     ? 'back'
     : card?.energyType !== undefined || card?.name?.includes('Energy')
@@ -49,17 +53,41 @@
           ? 'pokemon'
           : 'empty');
 
-  $effect(() => {
-    if (imageUrl !== lastImageUrl) {
-      failedImageUrl = '';
-      lastImageUrl = imageUrl;
-    }
-  });
+	  $effect(() => {
+	    if (imageUrl !== lastImageUrl) {
+	      failedImageUrl = '';
+	      lastImageUrl = imageUrl;
+	    }
+	  });
 
-  function preventSelection(event: Event) {
-    event.preventDefault();
-  }
-</script>
+	  function preventSelection(event: Event) {
+	    event.preventDefault();
+	  }
+
+	  function suppressTouchLandscapePreview() {
+	    return typeof window !== 'undefined'
+	      && window.matchMedia('(pointer: coarse) and (orientation: landscape)').matches;
+	  }
+
+	  function handleTileClick(event: MouseEvent) {
+	    onclick?.(event);
+	    if (!canPreview || event.defaultPrevented || suppressTouchLandscapePreview()) {
+	      return;
+	    }
+	    event.preventDefault();
+	    event.stopPropagation();
+	    cardPreviewStore.show(card, imageUrl);
+	  }
+
+	  function handleTileKeydown(event: KeyboardEvent) {
+	    if (!canPreview || (event.key !== 'Enter' && event.key !== ' ')) {
+	      return;
+	    }
+	    event.preventDefault();
+	    event.stopPropagation();
+	    cardPreviewStore.show(card, imageUrl);
+	  }
+	</script>
 
 {#if interactive}
   <button
@@ -70,12 +98,12 @@
     class={`card-tile ${typeClass}`}
     draggable={draggable && !disabled}
     {disabled}
-    data-testid={testId || undefined}
-    title={card?.fullName ?? label}
-    {onclick}
-    {ondragstart}
-    {ondragend}
-    onselectstart={preventSelection}
+	    data-testid={testId || undefined}
+	    title={card?.fullName ?? label}
+	    onclick={handleTileClick}
+	    {ondragstart}
+	    {ondragend}
+	    onselectstart={preventSelection}
   >
     {#if showImage}
       <img src={imageUrl} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
@@ -86,20 +114,25 @@
       {/if}
     {/if}
     {#if damage > 0}
-      <span class="damage-counter" class:triple-digit={damage >= 100} title={`${damage} damage`}>
+      <span class="damage-counter" class:triple-digit={damage >= 100} title={`${damage}ダメージ`}>
         <span class="damage-counter-value">{damage}</span>
       </span>
-    {/if}
-  </button>
-{:else}
-  <div
-    class:selected
-    class:compact
-    class:playable
-    class={`card-tile ${typeClass}`}
-    data-testid={testId || undefined}
-    title={card?.fullName ?? label}
-  >
+	    {/if}
+	  </button>
+	{:else}
+	  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+	  <div
+	    class:selected
+	    class:compact
+	    class:playable
+	    class={`card-tile ${typeClass}`}
+	    data-testid={testId || undefined}
+	    title={card?.fullName ?? label}
+	    role={canPreview ? 'button' : undefined}
+	    tabindex={canPreview ? 0 : undefined}
+	    onclick={canPreview ? handleTileClick : undefined}
+	    onkeydown={canPreview ? handleTileKeydown : undefined}
+	  >
     {#if showImage}
       <img src={imageUrl} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
     {:else}
@@ -109,14 +142,14 @@
       {/if}
     {/if}
     {#if damage > 0}
-      <span class="damage-counter" class:triple-digit={damage >= 100} title={`${damage} damage`}>
+      <span class="damage-counter" class:triple-digit={damage >= 100} title={`${damage}ダメージ`}>
         <span class="damage-counter-value">{damage}</span>
       </span>
-    {/if}
-  </div>
-{/if}
+	    {/if}
+	  </div>
+	{/if}
 
-<style>
+	<style>
   .card-tile {
     position: relative;
     z-index: 0;
@@ -234,7 +267,7 @@
     background: linear-gradient(#fff7cc, #e7c95b);
   }
 
-  .card-tile.trainer {
-    background: linear-gradient(#fafafa, #d8dde4);
-  }
-</style>
+	  .card-tile.trainer {
+	    background: linear-gradient(#fafafa, #d8dde4);
+	  }
+	</style>

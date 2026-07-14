@@ -10,10 +10,12 @@ from typing import Any, Callable
 
 
 FRONTEND_ROOT = Path(__file__).resolve().parents[2]
+WORKSPACE_ROOT = FRONTEND_ROOT.parent.parent
+DEFAULT_SAMPLE_SUBMISSION = WORKSPACE_ROOT / "input" / "simulation" / "sample_submission"
 SAMPLE_SUBMISSION = Path(
     os.environ.get(
         "CABT_SAMPLE_SUBMISSION_DIR",
-        FRONTEND_ROOT / "sample_submission",
+        DEFAULT_SAMPLE_SUBMISSION if DEFAULT_SAMPLE_SUBMISSION.exists() else FRONTEND_ROOT / "sample_submission",
     )
 ).resolve()
 sys.path.insert(0, str(SAMPLE_SUBMISSION))
@@ -39,7 +41,37 @@ def first_legal_agent(obs: dict[str, Any]) -> list[int]:
     select = obs.get("select")
     if select is None:
         raise RuntimeError("The bridge expected preselected decks before battle start.")
-    return list(range(select["maxCount"]))
+    max_count = int(select.get("maxCount", 0))
+    min_count = int(select.get("minCount", 0))
+    option_count = len(select.get("option") or [])
+    count = min(max(max_count, min_count), option_count)
+    return list(range(count))
+
+
+def validate_action(obs: dict[str, Any], action: Any, actor: str) -> list[int]:
+    select = obs.get("select")
+    if select is None:
+        raise RuntimeError(f"{actor} was asked to act with obs.select=None")
+    if not isinstance(action, list):
+        raise RuntimeError(f"{actor} returned non-list action: {type(action).__name__}")
+    if not all(isinstance(item, int) for item in action):
+        raise RuntimeError(f"{actor} returned non-int action items: {action!r}")
+    min_count = int(select.get("minCount", 0))
+    max_count = int(select.get("maxCount", 0))
+    option_count = len(select.get("option") or [])
+    if len(action) < min_count or len(action) > max_count:
+        raise RuntimeError(
+            f"{actor} returned {len(action)} choices, expected {min_count}..{max_count}"
+        )
+    if len(set(action)) != len(action):
+        raise RuntimeError(f"{actor} returned duplicate option indexes: {action!r}")
+    out_of_range = [item for item in action if item < 0 or item >= option_count]
+    if out_of_range:
+        raise RuntimeError(
+            f"{actor} returned out-of-range option indexes {out_of_range!r}; "
+            f"option_count={option_count}"
+        )
+    return action
 
 
 def load_agent(agent_path: str | None) -> AgentFn:
@@ -73,9 +105,18 @@ def load_agent(agent_path: str | None) -> AgentFn:
         except ValueError:
             pass
 
-    agent = getattr(module, "agent", None)
-    if not callable(agent):
+    raw_agent = getattr(module, "agent", None)
+    if not callable(raw_agent):
         raise AttributeError(f"{path} does not export callable agent(obs)")
+
+    def agent(obs: dict[str, Any]) -> list[int]:
+        old_cwd = Path.cwd()
+        try:
+            os.chdir(path.parent)
+            return raw_agent(obs)
+        finally:
+            os.chdir(old_cwd)
+
     return agent
 
 
@@ -83,10 +124,18 @@ class Session:
     def __init__(self) -> None:
         self.obs: dict[str, Any] | None = None
         self.agent: AgentFn = first_legal_agent
+        self.deck0: list[int] | None = None
+        self.deck1: list[int] | None = None
+        self.agent_path: str | None = None
+        self.history: list[list[int]] = []
         self.active = False
 
     def start(self, deck0: list[int], deck1: list[int], agent_path: str | None) -> dict[str, Any]:
         self.close()
+        self.deck0 = list(deck0)
+        self.deck1 = list(deck1)
+        self.agent_path = agent_path
+        self.history = []
         self.agent = load_agent(agent_path)
         obs, start_data = battle_start(deck0, deck1)
         if obs is None or not start_data.battlePtr:
@@ -106,12 +155,44 @@ class Session:
     def select(self, selection: list[int]) -> dict[str, Any]:
         if not self.active:
             raise RuntimeError("No active CABT battle.")
-        self.obs = battle_select(selection)
+        self.apply_selection(selection, record=True)
         self.play_ai_turns()
+        return self.snapshot()
+
+    def rewind(self, history_length: int) -> dict[str, Any]:
+        if self.deck0 is None or self.deck1 is None:
+            raise RuntimeError("No CABT battle to rewind.")
+        if history_length < 0 or history_length > len(self.history):
+            raise RuntimeError(
+                f"Invalid rewind history length {history_length}; current={len(self.history)}"
+            )
+
+        target_history = [list(item) for item in self.history[:history_length]]
+        self.close()
+        self.agent = load_agent(self.agent_path)
+        obs, start_data = battle_start(self.deck0, self.deck1)
+        if obs is None or not start_data.battlePtr:
+            return {
+                "ok": False,
+                "error": (
+                    "battle_start failed during rewind: "
+                    f"errorPlayer={start_data.errorPlayer}, errorType={start_data.errorType}"
+                ),
+            }
+        self.obs = obs
+        self.active = True
+        self.history = []
+        for selection in target_history:
+            self.apply_selection(selection, record=True)
         return self.snapshot()
 
     def state(self) -> dict[str, Any]:
         return self.snapshot()
+
+    def apply_selection(self, selection: list[int], record: bool) -> None:
+        self.obs = battle_select(selection)
+        if record:
+            self.history.append(list(selection))
 
     def play_ai_turns(self) -> None:
         for _ in range(200):
@@ -123,8 +204,8 @@ class Session:
                 return
             if current.get("yourIndex") != 1:
                 return
-            action = self.agent(self.obs)
-            self.obs = battle_select(action)
+            action = validate_action(self.obs, self.agent(self.obs), "AI opponent")
+            self.apply_selection(action, record=True)
         raise RuntimeError("AI turn limit exceeded.")
 
     def snapshot(self) -> dict[str, Any]:
@@ -133,6 +214,7 @@ class Session:
             "observation": self.obs,
             "cards": [to_jsonable(card) for card in all_card_data()],
             "attacks": [to_jsonable(attack) for attack in all_attack()],
+            "historyLength": len(self.history),
         }
 
     def close(self) -> None:
@@ -151,6 +233,8 @@ def handle(session: Session, message: dict[str, Any]) -> dict[str, Any]:
         return session.start(message["deck0"], message["deck1"], message.get("agentPath"))
     if command == "select":
         return session.select(message["selection"])
+    if command == "rewind":
+        return session.rewind(int(message["historyLength"]))
     if command == "state":
         return session.state()
     if command == "close":

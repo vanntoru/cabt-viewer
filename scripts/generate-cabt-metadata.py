@@ -25,6 +25,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to EN_Card_Data.csv.",
     )
     parser.add_argument(
+        "--jp-card-csv",
+        type=Path,
+        default=ROOT / "data" / "JP_Card_Data.csv",
+        help="Path to JP_Card_Data.csv for Japanese attack-name metadata.",
+    )
+    parser.add_argument(
         "--sample-submission",
         type=Path,
         default=ROOT / "sample_submission",
@@ -34,7 +40,7 @@ def parse_args() -> argparse.Namespace:
         "--out-dir",
         type=Path,
         default=ROOT / "src" / "lib" / "cabt",
-        help="Directory for cardData.generated.json and attackData.generated.json.",
+        help="Directory for cardData.generated.json, attackData.generated.json, and attackNamesJa.generated.json.",
     )
     return parser.parse_args()
 
@@ -89,6 +95,28 @@ def load_csv_rows(path: Path) -> dict[int, dict[str, Any]]:
                 "attackText": nullable_text(row["Effect Explanation"]),
             }
     return rows
+
+
+def load_japanese_attack_names(path: Path, cards: list[dict[str, Any]]) -> dict[str, str]:
+    if not path.exists():
+        return {}
+
+    card_attack_names: dict[int, list[str]] = {}
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        for row in csv.DictReader(file):
+            name = nullable_text(row["ワザ名"])
+            cost = nullable_text(row["コスト"])
+            if not name or name.startswith("[") or not cost or cost.lower() == "n/a":
+                continue
+            card_attack_names.setdefault(int(row["カード ID"]), []).append(name)
+
+    attack_names: dict[str, str] = {}
+    for card in cards:
+        names = card_attack_names.get(int(card["id"]), [])
+        for index, attack_id in enumerate(card.get("attacks") or []):
+            if index < len(names):
+                attack_names[str(int(attack_id))] = names[index]
+    return attack_names
 
 
 def load_engine_metadata(sample_submission: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -164,14 +192,21 @@ def main() -> None:
     csv_rows = load_csv_rows(args.card_csv)
     engine_cards, attacks = load_engine_metadata(args.sample_submission)
     cards = merge_card_rows(engine_cards, csv_rows)
+    attack_names_ja = load_japanese_attack_names(args.jp_card_csv, cards)
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     write_json(args.out_dir / "cardData.generated.json", cards)
     write_json(args.out_dir / "attackData.generated.json", attacks)
+    if attack_names_ja:
+        write_json(args.out_dir / "attackNamesJa.generated.json", attack_names_ja)
 
     csv_only = len(set(csv_rows) - {int(card["cardId"]) for card in engine_cards})
     print(f"Wrote {len(cards)} CABT-supported cards to {args.out_dir / 'cardData.generated.json'}")
     print(f"Wrote {len(attacks)} CABT attacks to {args.out_dir / 'attackData.generated.json'}")
+    if attack_names_ja:
+        print(f"Wrote {len(attack_names_ja)} Japanese CABT attack names to {args.out_dir / 'attackNamesJa.generated.json'}")
+    else:
+        print(f"Skipped Japanese attack names; JP card CSV not found: {args.jp_card_csv}")
     print(f"Ignored {csv_only} unique CSV card IDs not reported by cg.api.all_card_data()")
 
 

@@ -1,8 +1,19 @@
+<script lang="ts">
+  type Props = {
+    workbenchUrl?: string;
+  };
+
+  let { workbenchUrl = '' }: Props = $props();
+</script>
+
 <header class="app-header">
   <div>
-    <h1>CABT Battle Viewer</h1>
-    <p>Human vs AI play and AI vs AI game review.</p>
+    <h1>対戦リプレイビューア</h1>
+    <p>対戦とリプレイ確認</p>
   </div>
+  {#if workbenchUrl}
+    <a class="workbench-link" href={workbenchUrl}>Workbenchへ戻る</a>
+  {/if}
 </header>
 
 <style>
@@ -26,5 +37,41 @@
 
   .app-header p {
     display: none;
+  }
+
+  .workbench-link {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 1px solid var(--surface-toolbar-border);
+    border-radius: 999px;
+    background: var(--surface-toolbar-bg);
+    color: var(--accent-strong);
+    box-shadow: var(--surface-toolbar-shadow);
+    backdrop-filter: blur(var(--backdrop-blur));
+    font-size: 12px;
+    font-weight: 900;
+    text-decoration: none;
+    touch-action: manipulation;
+  }
+
+  @media (max-width: 640px) {
+    .app-header {
+      align-items: flex-start;
+    }
+
+    .app-header h1 {
+      max-width: 180px;
+      font-size: 14px;
+      line-height: 1.25;
+    }
+
+    .workbench-link {
+      min-height: 38px;
+      padding: 7px 10px;
+      font-size: 11px;
+    }
   }
 </style>

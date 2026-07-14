@@ -9,6 +9,8 @@
     concealed?: boolean;
     playableIndexes?: number[];
     placedIndexes?: number[];
+    expandable?: boolean;
+    forceCollapsed?: boolean;
     onSelect: (playerIndex: number, handIndex: number) => void;
     onDrag: (playerIndex: number, handIndex: number, event: DragEvent) => void;
     onDragEnd?: () => void;
@@ -21,6 +23,8 @@
     concealed = false,
     playableIndexes = [],
     placedIndexes = [],
+    expandable = false,
+    forceCollapsed = false,
     onSelect,
     onDrag,
     onDragEnd = () => {},
@@ -32,6 +36,7 @@
   let handElement = $state<HTMLDivElement>();
   let canScrollLeft = $state(false);
   let canScrollRight = $state(false);
+  let pinnedExpanded = $state(false);
 
   function updateScrollIndicators() {
     if (!handElement || concealed) {
@@ -48,6 +53,9 @@
     player.hand.length;
     placedIndexes.length;
     concealed;
+    if (!expandable || concealed) {
+      pinnedExpanded = false;
+    }
     updateScrollIndicators();
   });
 
@@ -59,18 +67,37 @@
     observer.observe(handElement);
     return () => observer.disconnect();
   });
+
+  function togglePinnedExpanded() {
+    if (!expandable || concealed) {
+      return;
+    }
+    pinnedExpanded = !pinnedExpanded;
+  }
 </script>
 
 <div
   bind:this={handElement}
   class:disabled
   class:concealed
+  class:expandable
+  class:force-collapsed={forceCollapsed}
+  class:pinned-expanded={pinnedExpanded}
   class:can-scroll-left={canScrollLeft}
   class:can-scroll-right={canScrollRight}
   class="hand"
   data-card-count={player.hand.length}
   onscroll={updateScrollIndicators}
 >
+  {#if expandable && !concealed}
+    <button
+      type="button"
+      class="hand-expand-handle"
+      class:pinned-expanded={pinnedExpanded}
+      aria-label={pinnedExpanded ? '手札の固定表示を解除' : '手札を固定表示'}
+      onclick={togglePinnedExpanded}
+    ></button>
+  {/if}
   {#each player.hand as card, index}
     {@const cardDisabled = disabled || (hasPlayableFilter && (!playableSet.has(index) || placedSet.has(index)))}
     {#if !placedSet.has(index)}
@@ -83,6 +110,7 @@
         disabled={cardDisabled}
         interactive={!cardDisabled && !concealed}
         faceDown={concealed}
+        previewable={!concealed}
         testId={`hand-card-${player.index}-${index}`}
         onclick={() => onSelect(player.index, index)}
         ondragstart={(event) => onDrag(player.index, index, event)}
@@ -93,7 +121,7 @@
 </div>
 
 <style>
-  .hand {
+	  .hand {
     --hand-fade-size: calc(var(--card-w) * 0.68);
     --hand-scroll-mask: linear-gradient(90deg, #000 0%, #000 100%);
     position: relative;
@@ -113,8 +141,9 @@
     scrollbar-width: thin;
     -webkit-mask-image: var(--hand-scroll-mask);
     mask-image: var(--hand-scroll-mask);
-    -webkit-overflow-scrolling: touch;
-  }
+	    -webkit-overflow-scrolling: touch;
+	    transition: transform 150ms ease, filter 150ms ease;
+	  }
 
   .hand:not(.concealed).can-scroll-left {
     --hand-scroll-mask: linear-gradient(90deg, transparent 0, #000 var(--hand-fade-size), #000 100%);
@@ -141,9 +170,33 @@
     flex: 1 0 0;
   }
 
-  .hand:not(.concealed) :global(.card-tile) {
-    flex: 0 0 auto;
+	  .hand:not(.concealed) :global(.card-tile) {
+	    flex: 0 0 auto;
+	  }
+
+  .hand.disabled {
+    opacity: 1;
+    cursor: default;
   }
+
+	  .hand-expand-handle {
+	    position: absolute;
+	    top: 4px;
+	    left: 50%;
+	    z-index: 5;
+	    width: 44px;
+	    height: 10px;
+	    transform: translateX(-50%);
+	    border: 0;
+	    border-radius: 999px;
+	    background: rgba(30, 41, 59, 0.34);
+	    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
+	  }
+
+	  .hand-expand-handle:hover,
+	  .hand-expand-handle.pinned-expanded {
+	    background: rgba(20, 184, 166, 0.72);
+	  }
 
   :global(.debug-zones) .hand {
     outline: 2px dashed rgba(236, 72, 153, 0.86);
@@ -208,10 +261,35 @@
     top: calc(100% + 2px);
   }
 
-  :global(.player-panel.bottom) .hand {
-    min-height: 0;
-    align-items: start;
-    padding-top: var(--hand-hover-clearance);
-    padding-bottom: var(--hand-shadow-clearance);
+	  :global(.player-panel.bottom) .hand {
+	    min-height: 0;
+	    align-items: start;
+	    padding-top: var(--hand-hover-clearance);
+	    padding-bottom: var(--hand-shadow-clearance);
+	  }
+
+	  :global(.player-panel.bottom) .hand.expandable:not(.concealed) {
+	    transform: translateY(var(--bottom-hand-rest-offset, calc(var(--card-w) * 0.72)));
+	  }
+
+	  :global(.player-panel.bottom) .hand.expandable:not(.concealed):hover,
+	  :global(.player-panel.bottom) .hand.expandable:not(.concealed):focus-within,
+	  :global(.player-panel.bottom) .hand.expandable.pinned-expanded:not(.concealed) {
+	    transform: translateY(0);
+	    filter: none;
+	  }
+
+	  :global(.player-panel.bottom) .hand.expandable.force-collapsed:not(.concealed) {
+	    transform: translateY(var(--bottom-hand-rest-offset, calc(var(--card-w) * 0.72)));
+	  }
+
+  @media (max-width: 860px) {
+    :global(.player-panel.bottom) .hand.expandable:not(.concealed) {
+      transform: translateY(var(--bottom-hand-rest-offset, calc(var(--card-w) * 0.42)));
+    }
+
+    :global(.player-panel.bottom) .hand.expandable.force-collapsed:not(.concealed) {
+      transform: translateY(var(--bottom-hand-rest-offset, calc(var(--card-w) * 0.42)));
+    }
   }
-</style>
+	</style>

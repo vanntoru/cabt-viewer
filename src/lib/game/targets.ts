@@ -56,6 +56,21 @@ function getPromptTargets(
   prompt: PromptView,
   blockedOption: 'blocked' | 'blockedFrom' | 'blockedTo',
 ): Array<{ player: GameView['players'][number]; slot: PokemonSlotView; target: CardTarget }> {
+  if (Array.isArray(prompt.fields.targets)) {
+    const explicitTargets = prompt.fields.targets as CardTarget[];
+    return explicitTargets
+      .map((target) => {
+        const playerIndex = target.player === PlayerType.BOTTOM_PLAYER
+          ? prompt.playerIndex
+          : current.players.find((player) => player.index !== prompt.playerIndex)?.index;
+        const player = current.players.find((item) => item.index === playerIndex);
+        const slot = player && target.slot === SlotType.ACTIVE
+          ? player.active
+          : player?.bench.find((bench) => bench.index === target.index);
+        return player && slot && !slot.empty ? { player, slot, target } : null;
+      })
+      .filter((item): item is { player: GameView['players'][number]; slot: PokemonSlotView; target: CardTarget } => !!item);
+  }
   const playerType = Number(prompt.fields.playerType ?? PlayerType.ANY);
   const slots = Array.isArray(prompt.fields.slots)
     ? (prompt.fields.slots as number[])

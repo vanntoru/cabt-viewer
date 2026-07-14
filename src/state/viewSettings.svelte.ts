@@ -37,7 +37,7 @@ function readSystemTheme(): ResolvedTheme {
 
 class ViewSettingsStore {
   followActive = $state(true);
-  autoConfirmPrompts = $state(true);
+  autoConfirmPrompts = $state(false);
   debugZones = $state(false);
   showLogs = $state(false);
   viewIndex = $state(0);

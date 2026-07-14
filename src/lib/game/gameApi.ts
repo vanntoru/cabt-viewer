@@ -9,4 +9,5 @@ export type GameCommandApi = {
   retreat(playerIndex: number, to: number): Promise<EngineResponse>;
   passTurn(playerIndex: number): Promise<EngineResponse>;
   resolvePrompt(id: number, result: unknown): Promise<EngineResponse>;
+  replayFromStep?(stepIndex: number, historyLength?: number): Promise<EngineResponse>;
 };

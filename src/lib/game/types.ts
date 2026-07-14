@@ -22,6 +22,7 @@ export type CardTarget = {
 
 export type CardView = {
   id?: number;
+  serial?: number;
   name: string;
   fullName: string;
   set?: string;
@@ -102,11 +103,13 @@ export type PlayerView = {
   id: number;
   name: string;
   hand: CardView[];
+  deck?: CardView[];
   deckCount: number;
   discard: CardView[];
   lostZone: CardView[];
   stadium: CardView[];
   playZone: CardView[];
+  prize?: CardView[];
   prizesLeft: number;
   active: PokemonSlotView;
   bench: PokemonSlotView[];
@@ -139,6 +142,7 @@ export type GameView = {
   phase: number;
   phaseLabel: string;
   turn: number;
+  liveHistoryLength?: number;
   activePlayerIndex: number;
   activePlayerId?: number;
   winner?: number;

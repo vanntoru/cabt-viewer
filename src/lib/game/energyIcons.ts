@@ -1,4 +1,12 @@
 const basicEnergyIcons: Array<[RegExp, string]> = [
+  [/基本【草】エネルギー/, 'grass'],
+  [/基本【炎】エネルギー/, 'fire'],
+  [/基本【水】エネルギー/, 'water'],
+  [/基本【雷】エネルギー/, 'lightning'],
+  [/基本【超】エネルギー/, 'psychic'],
+  [/基本【闘】エネルギー/, 'fighting'],
+  [/基本【悪】エネルギー/, 'darkness'],
+  [/基本【鋼】エネルギー/, 'metal'],
   [/\{G\}\s*Energy\b/i, 'grass'],
   [/\{R\}\s*Energy\b/i, 'fire'],
   [/\{W\}\s*Energy\b/i, 'water'],
@@ -111,5 +119,17 @@ export function pokemonTypeIconSrc(cardType: string | number | undefined): strin
 
 export function pokemonTypeLabelFor(cardType: string | number | undefined): string {
   const type = normalizedTypeName(cardType);
-  return type ? type[0].toUpperCase() + type.slice(1) : 'Pokemon';
+  return ({
+    grass: '草',
+    fire: '炎',
+    water: '水',
+    lightning: '雷',
+    psychic: '超',
+    fighting: '闘',
+    darkness: '悪',
+    metal: '鋼',
+    colorless: '無',
+    fairy: '妖',
+    dragon: '竜',
+  } as Record<string, string>)[type ?? ''] ?? 'ポケモン';
 }

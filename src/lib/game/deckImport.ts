@@ -11,6 +11,11 @@ export type DeckCardMetadata = {
   cardType?: number | null;
 };
 
+export type CanonicalDeckCard = {
+  cardId: number;
+  count: number;
+};
+
 export const SAMPLE_DECK = `Pokemon: 10
 2 Kyogre MEG 34
 4 Snover MEG 35
@@ -107,6 +112,39 @@ export function formatCabtDeckList(rawDeck: string, cardRows: DeckCardMetadata[]
   for (const group of groups.values()) {
     const line = `${group.count} ${group.row.name} ${group.row.set}${group.row.setNumber ? ` ${group.row.setNumber}` : ''}`;
     sections[deckSectionIndex(group.row)].rows.push(line);
+  }
+
+  return sections
+    .filter((section) => section.rows.length)
+    .map((section) => [`${section.title}: ${sumCounts(section.rows)}`, ...section.rows].join('\n'))
+    .join('\n\n');
+}
+
+export function formatCanonicalDeckList(cards: CanonicalDeckCard[], cardRows: DeckCardMetadata[]): string {
+  const rowsById = new Map(cardRows.map((row) => [row.id, row]));
+  const entries = cards.map((card, index) => {
+    const row = rowsById.get(card.cardId);
+    if (!row) {
+      throw new Error(`Canonical deck card ${index + 1}: unknown card ID ${card.cardId}.`);
+    }
+    if (!Number.isInteger(card.count) || card.count < 1 || card.count > 60) {
+      throw new Error(`Canonical deck card ${index + 1}: invalid count ${card.count}.`);
+    }
+    return { row, count: card.count };
+  });
+  const total = entries.reduce((sum, entry) => sum + entry.count, 0);
+  if (total !== 60) {
+    throw new Error(`Canonical deck must contain exactly 60 cards, found ${total}.`);
+  }
+
+  const sections = [
+    { title: 'Pokemon', rows: [] as string[] },
+    { title: 'Trainer', rows: [] as string[] },
+    { title: 'Energy', rows: [] as string[] },
+  ];
+  for (const { row, count } of entries) {
+    const line = `${count} ${row.name} ${row.set}${row.setNumber ? ` ${row.setNumber}` : ''}`;
+    sections[deckSectionIndex(row)].rows.push(line);
   }
 
   return sections

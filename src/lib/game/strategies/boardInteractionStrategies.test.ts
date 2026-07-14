@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { addDamagePlacement, damageForTarget, damagePlacementsToResult, type DamagePlacement } from '../../../state/promptSelectionModel';
+import {
+  addDamagePlacement,
+  adjustDamagePlacement,
+  damageForTarget,
+  damagePlacementsToResult,
+  type DamagePlacement,
+} from '../../../state/promptSelectionModel';
 import { sameTarget } from '../targets';
 import { SlotType, targetFor, type CardTarget, type GameView, type PlayerView, type PokemonSlotView, type PromptView } from '../types';
 import { createChoosePokemonStrategy } from './choosePokemonStrategy';
@@ -26,6 +32,32 @@ describe('board interaction strategies', () => {
 
     strategy.confirm();
     expect(resolved).toEqual([[{ target, damage: 20 }]]);
+  });
+
+  it('adjusts damage with quick amounts without overfilling or dropping below zero', () => {
+    const game = gameView();
+    const prompt = promptView('PutDamagePrompt', { damage: 60, options: { damageMultiple: 10 } });
+    const store = new DamageStore();
+    const strategy = createPutDamageStrategy({ game, prompt, store, resolve: () => {} });
+    const target = targetFor(0, 0, SlotType.ACTIVE);
+
+    expect(strategy.quickAmounts).toEqual([10, 20, 30]);
+    strategy.adjustDamage?.(target, 30);
+    strategy.adjustDamage?.(target, 30);
+    strategy.adjustDamage?.(target, 10);
+
+    expect(strategy.deltaFor(target)).toBe(60);
+    expect(strategy.canAdjustDamage?.(target, 10)).toBe(false);
+
+    strategy.adjustDamage?.(target, -10);
+    strategy.adjustDamage?.(target, -10);
+
+    expect(strategy.deltaFor(target)).toBe(40);
+    expect(strategy.canConfirm).toBe(false);
+
+    strategy.reset();
+    expect(strategy.deltaFor(target)).toBe(0);
+    expect(strategy.canAdjustDamage?.(target, -10)).toBe(false);
   });
 
   it('resolves single-target ChoosePokemonPrompt selections immediately', () => {
@@ -76,6 +108,11 @@ class DamageStore {
   placeDamage(target: CardTarget, amount: number, requiredDamage: number, maxAllowedDamage: DamagePlacement[]) {
     const maxForTarget = maxAllowedDamage.find((placement) => sameTarget(placement.target, target))?.damage ?? Infinity;
     this.damagePlacements = addDamagePlacement(this.damagePlacements, target, amount, requiredDamage, maxForTarget);
+  }
+
+  adjustDamage(target: CardTarget, amount: number, requiredDamage: number, maxAllowedDamage: DamagePlacement[]) {
+    const maxForTarget = maxAllowedDamage.find((placement) => sameTarget(placement.target, target))?.damage ?? Infinity;
+    this.damagePlacements = adjustDamagePlacement(this.damagePlacements, target, amount, requiredDamage, maxForTarget);
   }
 
   resetDamagePlacements() {

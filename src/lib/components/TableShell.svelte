@@ -57,6 +57,39 @@
     --replay-dock-h: 48px;
   }
 
+  @media (max-width: 860px) {
+    .table-shell {
+      --board-card-w: clamp(38px, min(10.8vw, 6.9vh), 60px);
+      --hand-card-w: min(clamp(54px, min(14vw, 8.6vh), 86px), calc(var(--board-card-w) * 1.42));
+      --min-table-width: 100vw;
+      --bench-card-w: calc(var(--board-card-w) * 1.08);
+      --opponent-hand-height: 44px;
+      --board-right-rail: 0px;
+      --table-side-gap: 8px;
+      --board-edge-pad: 8px;
+      --board-outline-pad-y: 5px;
+      --board-content-pad: 5px;
+      width: 100vw;
+      min-width: 0;
+    }
+
+    .table-shell.replay-mode {
+      --replay-dock-h: 64px;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .table-shell.replay-mode {
+      --replay-dock-h: 168px;
+    }
+  }
+
+  @media (min-width: 641px) and (max-width: 860px) and (pointer: coarse) {
+    .table-shell.replay-mode {
+      --replay-dock-h: 120px;
+    }
+  }
+
   .table-shell :global(*) {
     -webkit-user-select: none;
     user-select: none;

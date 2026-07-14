@@ -9,10 +9,36 @@ export type AgentOption = {
 export type GameLogEntry = {
   id: string;
   name: string;
-  file: string;
+  file?: string;
   createdAt?: string;
   players?: string[];
   description?: string;
+};
+
+export type RoundRobinDeckCard = {
+  cardId: number;
+  cardName: string;
+  count: number;
+  cardViewerUrl?: string;
+};
+
+export type RoundRobinDeck = {
+  id: string;
+  name: string;
+  source?: string;
+  role?: string;
+  deckHash?: string;
+  agentHash?: string;
+  datasetSource?: string;
+  description?: string;
+  cards: RoundRobinDeckCard[];
+};
+
+export type RoundRobinDeckCatalog = {
+  sourceRunId?: string;
+  sourceRunDir?: string;
+  generatedAt?: string;
+  decks: RoundRobinDeck[];
 };
 
 const FALLBACK_AGENT: AgentOption = {
@@ -28,6 +54,22 @@ export async function loadAgentOptions(): Promise<AgentOption[]> {
 
 export async function loadGameLogs(): Promise<GameLogEntry[]> {
   return loadJsonList<GameLogEntry>('/game-logs/logs.json', 'logs');
+}
+
+export async function loadRoundRobinDeckCatalog(): Promise<RoundRobinDeckCatalog> {
+  const response = await fetch('/round-robin-decks/current.json');
+  if (!response.ok) {
+    if (response.status === 404) {
+      return { decks: [] };
+    }
+    throw new Error(`/round-robin-decks/current.json: ${response.status}`);
+  }
+
+  const json = await response.json();
+  if (!json || typeof json !== 'object' || !Array.isArray(json.decks)) {
+    throw new Error('/round-robin-decks/current.json: expected { "decks": [...] }');
+  }
+  return json as RoundRobinDeckCatalog;
 }
 
 async function loadJsonList<T extends { id?: unknown }>(url: string, key: string): Promise<T[]> {

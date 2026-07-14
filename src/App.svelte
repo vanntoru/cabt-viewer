@@ -1,15 +1,17 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import ActiveFocus from './lib/components/ActiveFocus.svelte';
   import AppHeader from './lib/components/AppHeader.svelte';
   import BoardLayer from './lib/components/BoardLayer.svelte';
   import BoardPromptStrip from './lib/components/prompts/BoardPromptStrip.svelte';
+  import CardPreview from './lib/components/CardPreview.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import GameBoard from './lib/components/GameBoard.svelte';
   import GameStatus from './lib/components/GameStatus.svelte';
   import Hand from './lib/components/Hand.svelte';
   import ImportScreen from './lib/components/ImportScreen.svelte';
   import LogPanel from './lib/components/LogPanel.svelte';
+  import ManualLabelPanel from './lib/components/ManualLabelPanel.svelte';
   import PlayerPanel from './lib/components/PlayerPanel.svelte';
   import PromptGallery from './lib/components/prompt-gallery/PromptGallery.svelte';
   import PromptDock from './lib/components/prompts/PromptDock.svelte';
@@ -21,9 +23,17 @@
   import ZoneViewer from './lib/components/ZoneViewer.svelte';
   import type { GameCommandApi } from './lib/game/gameApi';
   import { localGameApi } from './lib/game/httpClient';
-  import { formatCabtDeckList } from './lib/game/deckImport';
+  import { resolveCardImageUrl } from './lib/game/cardImages';
+  import { formatCanonicalDeckList } from './lib/game/deckImport';
+  import {
+    extractUploadedDeckFromZipFile,
+    loadUploadedDecks,
+    saveUploadedDecks,
+    type UploadedDeck,
+  } from './lib/game/uploadedDecks';
   import { labelFor } from './lib/game/labels';
   import cardRows from './lib/cabt/cardData.generated.json';
+  import { CabtAreaType } from './lib/cabt/types';
   import type { BoardInteractionStrategy } from './lib/game/boardInteraction';
   import {
     canPlayCardToBoardArea,
@@ -48,7 +58,14 @@
   import { createChoosePokemonStrategy } from './lib/game/strategies/choosePokemonStrategy';
   import { createDamageTransferStrategy } from './lib/game/strategies/damageTransferStrategy';
   import { createPutDamageStrategy } from './lib/game/strategies/putDamageStrategy';
-  import { loadAgentOptions, loadGameLogs, type AgentOption, type GameLogEntry } from './lib/home/catalog';
+  import {
+    loadAgentOptions,
+    loadGameLogs,
+    loadRoundRobinDeckCatalog,
+    type AgentOption,
+    type GameLogEntry,
+    type RoundRobinDeckCatalog,
+  } from './lib/home/catalog';
   import {
     SlotType,
     targetFor,
@@ -62,15 +79,17 @@
   import { deckImportStore } from './state/deckImport.svelte';
   import { gameStore } from './state/game.svelte';
   import { gameSessionStore } from './state/gameSession.svelte';
+  import { liveTimelineStore } from './state/liveTimeline.svelte';
   import { promptLifecycleStore } from './state/promptLifecycle.svelte';
   import { damageTransferStore } from './state/damageTransfer.svelte';
   import { promptSelectionStore } from './state/promptSelection.svelte';
   import { replayStore } from './state/replay.svelte';
+  import { cardPreviewStore } from './state/cardPreview.svelte';
   import {
     canAssignAttachTarget,
     isAttachEnergyAvailable as isAttachEnergyAvailableModel,
   } from './state/promptSelectionModel';
-  import { selectionStore } from './state/selection.svelte';
+  import { selectionStore, type HandSelection } from './state/selection.svelte';
   import { setupSelectionStore } from './state/setupSelection.svelte';
   import {
     canPlaceSetupActive as canPlaceSetupActiveModel,
@@ -81,24 +100,54 @@
   import { viewSettingsStore } from './state/viewSettings.svelte';
   import { zoneViewerStore } from './state/zoneViewer.svelte';
 
-  type HomeMode = 'play' | 'logs';
+  type HomeMode = 'play' | 'logs' | 'decks';
+  type KnownDeckMemory = {
+    cards: CardView[];
+    complete: boolean;
+  };
+  type CabtCardRef = {
+    id?: number;
+    cardId?: number;
+    serial?: number;
+  };
+  type CabtMoveLog = {
+    type?: string | number;
+    playerIndex?: number;
+    fromArea?: number;
+    toArea?: number;
+    cardId?: number;
+    serial?: number;
+  };
 
   let showPromptGallery = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'prompt-gallery';
   const initialReplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'replay';
   let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
   let agents = $state<AgentOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
+  let roundRobinDeckCatalog = $state<RoundRobinDeckCatalog>({ decks: [] });
+  let uploadedDecks = $state<UploadedDeck[]>([]);
   let selectedAgentId = $state('');
-  let lastLoadedAgentDeckUrl = $state('');
+  let selectedPlayerDeckId = $state('');
+  let selectedOpponentDeckId = $state('');
+  let lastAppliedReplayViewPreference = $state('');
   let catalogBusy = $state(false);
   let catalogError = $state('');
+  let uploadBusy = $state(false);
+  let uploadError = $state('');
+  let knownDecksByPlayer = $state<Record<number, KnownDeckMemory>>({});
+  let appliedKnownDeckLogKeys = $state<string[]>([]);
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
-  let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
+  let liveTimelineMode = $derived(!replayMode && !!liveTimelineStore.replay);
+  let liveTimelineBrowsingPast = $derived(liveTimelineMode && liveTimelineStore.isBrowsingPast);
+  let game = $derived(replayMode ? replayStore.currentView : (liveTimelineStore.currentView ?? gameStore.game));
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
-  let sessionBusy = $derived(replayMode ? replayStore.loading : busy);
+  let sessionBusy = $derived(replayMode ? replayStore.loading : (busy || liveTimelineBrowsingPast));
   let commandApi = $derived<GameCommandApi>(localGameApi);
   let resolvingPrompt = $derived(gameStore.resolvingPrompt);
+  let promptInputSuppressed = $state(false);
+  let promptInputSuppressTimer: ReturnType<typeof setTimeout> | null = null;
+  let promptResolvingBlocked = $derived(resolvingPrompt || promptInputSuppressed);
   let selectedHand = $derived(selectionStore.selectedHand);
   let draggingHand = $derived(selectionStore.draggingHand);
   let focusedSlot = $derived(selectionStore.focusedSlot);
@@ -118,13 +167,20 @@
   let theme = $derived(viewSettingsStore.theme);
   let themePreference = $derived(viewSettingsStore.themePreference);
   let selectedAgent = $derived(agents.find((agent) => agent.id === selectedAgentId));
+  let workbenchReturnUrl = $derived(resolveWorkbenchReturnUrl());
   onMount(() => {
     const stopThemeSync = viewSettingsStore.startThemeSync();
+    uploadedDecks = loadUploadedDecks();
     void refreshCatalog();
     if (initialReplayMode) {
       void replayStore.loadSaved();
     }
     return stopThemeSync;
+  });
+  onDestroy(() => {
+    if (promptInputSuppressTimer) {
+      clearTimeout(promptInputSuppressTimer);
+    }
   });
   $effect(() => {
     document.documentElement.dataset.theme = theme;
@@ -138,24 +194,68 @@
     };
   });
   $effect(() => {
-    const deckUrl = selectedAgent?.deckUrl ?? '';
-    if (!deckUrl) {
-      lastLoadedAgentDeckUrl = '';
+    const choices = availableDeckChoiceKeys();
+    if (!choices.length) {
+      selectedPlayerDeckId = '';
+      selectedOpponentDeckId = '';
       return;
     }
-    if (deckUrl === lastLoadedAgentDeckUrl) {
+
+    const playerDeckId = choices.includes(selectedPlayerDeckId) ? selectedPlayerDeckId : choices[0];
+    if (selectedPlayerDeckId !== playerDeckId) {
+      selectedPlayerDeckId = playerDeckId;
+    }
+
+    const opponentDeckId = choices.includes(selectedOpponentDeckId)
+      ? selectedOpponentDeckId
+      : choices.find((key) => key !== playerDeckId) ?? choices[0];
+    if (selectedOpponentDeckId !== opponentDeckId) {
+      selectedOpponentDeckId = opponentDeckId;
+    }
+  });
+  $effect(() => {
+    const deckText = deckTextForChoice(selectedPlayerDeckId);
+    if (!deckText) {
       return;
     }
-    void loadSelectedAgentDeck(deckUrl);
+    deckImportStore.deck1Text = deckText;
+  });
+  $effect(() => {
+    const deckText = deckTextForChoice(selectedOpponentDeckId);
+    if (!deckText) {
+      return;
+    }
+    deckImportStore.deck2Text = deckText;
+  });
+  $effect(() => {
+    const replay = replayStore.replay;
+    if (!replay) {
+      lastAppliedReplayViewPreference = '';
+      return;
+    }
+    const preferredPlayerIndex = replay.preferredPlayerIndex;
+    if (typeof preferredPlayerIndex !== 'number') {
+      return;
+    }
+    const replayIdentity = replayStore.currentReplayId || replay.id;
+    const key = `${replayIdentity}:${preferredPlayerIndex}`;
+    if (key === lastAppliedReplayViewPreference) {
+      return;
+    }
+    lastAppliedReplayViewPreference = key;
+    viewSettingsStore.switchToPlayer(preferredPlayerIndex);
   });
   let zoneViewerOpen = $derived(zoneViewerStore.open);
-  let zoneViewerTitle = $derived(zoneViewerStore.title);
-  let zoneViewerFaceDown = $derived(zoneViewerStore.faceDown);
+  let zoneViewerTitle = $derived(displayZoneViewerTitle());
+  let zoneViewerFaceDown = $derived(displayZoneViewerFaceDown());
+  let zoneViewerZone = $derived(zoneViewerStore.zone);
   let zoneViewerIsStadium = $derived(zoneViewerStore.zone === 'stadium');
+  let projectedPileHover = $state('');
+  let bottomHandForceCollapsed = $derived(projectedPileHover.endsWith('-discard') || (zoneViewerOpen && zoneViewerZone === 'discard'));
   let activePlayer = $derived(game?.players[game.activePlayerIndex]);
   let bottomPlayer = $derived(game?.players[viewIndex] ?? game?.players[0]);
   let topPlayer = $derived(game?.players.find((player) => player.index !== bottomPlayer?.index));
-  let currentPrompt = $derived(replayMode ? null : game?.prompts[0]);
+  let currentPrompt = $derived(replayMode || liveTimelineBrowsingPast ? null : game?.prompts[0]);
   let boardTargetPrompt = $derived(currentPrompt?.className === 'ChoosePokemonPrompt' ? currentPrompt : null);
   let attachPrompt = $derived(currentPrompt?.className === 'AttachEnergyPrompt' ? currentPrompt : null);
   let damagePrompt = $derived(currentPrompt?.className === 'PutDamagePrompt' ? currentPrompt : null);
@@ -297,11 +397,11 @@
   );
   let gameResultLabel = $derived(
     game?.winner === 3
-      ? 'Draw'
+      ? '引き分け'
       : winnerName
-        ? `${winnerName} wins`
+        ? `${winnerName}の勝ち`
         : gameFinished
-          ? 'Game finished'
+          ? '試合終了'
           : '',
   );
   let currentPromptDockMode = $derived<'default' | 'search' | 'attachEnergy'>(
@@ -316,7 +416,7 @@
   let draggingCard = $derived(draggingHand && game ? game.players[draggingHand.playerIndex]?.hand[draggingHand.handIndex] : undefined);
   let currentStadium = $derived(game ? game.players.flatMap((player) => player.stadium)[0] : undefined);
   let currentStadiumOwner = $derived(game?.players.find((player) => player.stadium.length));
-  let viewedCards = $derived(zoneViewerStore.cardsFor(game));
+  let viewedCards = $derived(cardsForOpenZone(game));
   let focusedPlayer = $derived(focusedSlot && game ? game.players[focusedSlot.ownerIndex] : undefined);
   let focusedIsActive = $derived(focusedSlot?.slot === 'active');
   let focusedCanAct = $derived(!!focusedPlayer && canAct(focusedPlayer.index));
@@ -353,6 +453,8 @@
         previewAttachEnergySlot(slot, attachPrompt, attachPromptAssignments, attachPromptCards),
       )
     : []);
+  let topPlayerWithKnownDeck = $derived(topPlayer ? playerWithKnownDeck(topPlayer) : undefined);
+  let bottomPlayerWithKnownDeck = $derived(bottomPlayer ? playerWithKnownDeck(bottomPlayer) : undefined);
   let canPlayOnBoard = $derived(
     !!bottomPlayer &&
     canPlayCardToBoardArea({
@@ -372,6 +474,12 @@
     }
   });
   $effect(() => {
+    if (replayMode || liveTimelineBrowsingPast) {
+      return;
+    }
+    rememberVisibleDecks(game, currentPrompt);
+  });
+  $effect(() => {
     if (promptLifecycleStore.shouldAutoConfirm(currentPrompt, autoResolvePrompt, resolvingPrompt)) {
       void resolvePrompt(autoResolvePromptResult);
     }
@@ -385,18 +493,39 @@
     }
 
     selectionStore.setSelectedHand(null);
+    gameSessionStore.reset();
+    knownDecksByPlayer = {};
+    appliedKnownDeckLogKeys = [];
     replayStore.clear();
     homeMode = 'play';
     await gameSessionStore.run(() => localGameApi.start(decks.player1Cards, decks.player2Cards, selectedAgentId));
+  }
+
+  async function replayLiveFromCurrentStep() {
+    const stepIndex = liveTimelineStore.stepIndex;
+    const historyLength = liveTimelineStore.currentStep?.liveHistoryLength;
+    selectionStore.setSelectedHand(null);
+    const response = await gameSessionStore.run(() => localGameApi.replayFromStep?.(stepIndex, historyLength) ?? Promise.resolve({
+      ok: false,
+      error: 'この環境ではやり直しに対応していません。',
+    }));
+    if (response.ok && response.view) {
+      liveTimelineStore.trimFutureFromStep(stepIndex, response.view);
+    }
   }
 
   async function refreshCatalog() {
     catalogBusy = true;
     catalogError = '';
     try {
-      const [nextAgents, nextLogs] = await Promise.all([loadAgentOptions(), loadGameLogs()]);
+      const [nextAgents, nextLogs, nextDeckCatalog] = await Promise.all([
+        loadAgentOptions(),
+        loadGameLogs(),
+        loadRoundRobinDeckCatalog(),
+      ]);
       agents = nextAgents;
       gameLogs = nextLogs;
+      roundRobinDeckCatalog = nextDeckCatalog;
       if (!selectedAgentId || !nextAgents.some((agent) => agent.id === selectedAgentId)) {
         selectedAgentId = nextAgents[0]?.id ?? '';
       }
@@ -407,42 +536,135 @@
     }
   }
 
-  async function loadSelectedAgentDeck(deckUrl: string) {
+  function roundRobinDeckKey(id: string): string {
+    return `round:${id}`;
+  }
+
+  function uploadedDeckKey(id: string): string {
+    return `uploaded:${id}`;
+  }
+
+  function availableDeckChoiceKeys(): string[] {
+    return [
+      ...roundRobinDeckCatalog.decks.map((deck) => roundRobinDeckKey(deck.id)),
+      ...uploadedDecks.map((deck) => uploadedDeckKey(deck.id)),
+    ];
+  }
+
+  function deckTextForChoice(choiceKey: string): string {
+    if (choiceKey.startsWith('uploaded:')) {
+      return uploadedDecks.find((deck) => uploadedDeckKey(deck.id) === choiceKey)?.deckText ?? '';
+    }
+    const roundRobinId = choiceKey.startsWith('round:') ? choiceKey.slice('round:'.length) : choiceKey;
+    const deck = roundRobinDeckCatalog.decks.find((item) => item.id === roundRobinId);
+    if (!deck) {
+      return '';
+    }
     try {
-      const response = await fetch(deckUrl);
-      if (!response.ok) {
-        throw new Error(`${deckUrl}: ${response.status}`);
-      }
-      deckImportStore.deck2Text = formatCabtDeckList(await response.text(), cardRows);
-      lastLoadedAgentDeckUrl = deckUrl;
+      return formatCanonicalDeckList(deck.cards, cardRows);
     } catch (error) {
       catalogError = error instanceof Error ? error.message : String(error);
+      return '';
+    }
+  }
+
+  async function uploadDeckFiles(files: FileList | File[]) {
+    const fileArray = Array.from(files).filter((file) => file.name.toLowerCase().endsWith('.zip'));
+    if (!fileArray.length) {
+      uploadError = 'ZIPファイルを選択してください。';
+      return;
+    }
+    uploadBusy = true;
+    uploadError = '';
+    try {
+      const extracted = [] as UploadedDeck[];
+      for (const file of fileArray) {
+        extracted.push(await extractUploadedDeckFromZipFile(file, cardRows));
+      }
+      uploadedDecks = [...uploadedDecks, ...extracted];
+      saveUploadedDecks(uploadedDecks);
+      const latest = extracted.at(-1);
+      if (latest) {
+        selectedPlayerDeckId = uploadedDeckKey(latest.id);
+      }
+    } catch (error) {
+      uploadError = error instanceof Error ? error.message : String(error);
+    } finally {
+      uploadBusy = false;
+    }
+  }
+
+  function deleteUploadedDeck(id: string) {
+    uploadedDecks = uploadedDecks.filter((deck) => deck.id !== id);
+    saveUploadedDecks(uploadedDecks);
+    if (selectedPlayerDeckId === uploadedDeckKey(id)) {
+      selectedPlayerDeckId = availableDeckChoiceKeys()[0] ?? '';
+    }
+    if (selectedOpponentDeckId === uploadedDeckKey(id)) {
+      selectedOpponentDeckId = availableDeckChoiceKeys().find((key) => key !== selectedPlayerDeckId) ?? availableDeckChoiceKeys()[0] ?? '';
     }
   }
 
   async function loadGameLog(log: GameLogEntry) {
     gameSessionStore.reset();
+    knownDecksByPlayer = {};
+    appliedKnownDeckLogKeys = [];
     zoneViewerStore.close();
     viewSettingsStore.resetView();
     homeMode = 'logs';
     await replayStore.loadSaved(log.file || log.id);
   }
 
-  async function playToTarget(target: CardTarget) {
-    if (!selectedHand || !game || !canAct(selectedHand.playerIndex)) {
+  function suppressPromptInputBriefly() {
+    promptInputSuppressed = true;
+    if (promptInputSuppressTimer) {
+      clearTimeout(promptInputSuppressTimer);
+    }
+    promptInputSuppressTimer = setTimeout(() => {
+      promptInputSuppressed = false;
+      promptInputSuppressTimer = null;
+    }, 450);
+  }
+
+  function stopDropEvent(event: DragEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }
+
+  function handCardForSelection(selection: HandSelection | null | undefined) {
+    return selection && game ? game.players[selection.playerIndex]?.hand[selection.handIndex] : undefined;
+  }
+
+  async function playSelectionToTarget(selection: HandSelection, target: CardTarget) {
+    if (!game || !canAct(selection.playerIndex)) {
       return;
     }
-    await gameSessionStore.run(() => commandApi.playCard(selectedHand!.playerIndex, selectedHand!.handIndex, target));
+    suppressPromptInputBriefly();
+    selectionStore.clearHandAndFocus();
+    await gameSessionStore.run(() => commandApi.playCard(selection.playerIndex, selection.handIndex, target));
+    suppressPromptInputBriefly();
+  }
+
+  async function playToTarget(target: CardTarget) {
+    if (!selectedHand) {
+      return;
+    }
+    await playSelectionToTarget(selectedHand, target);
   }
 
   function playToSlot(slot: PokemonSlotView) {
-    if (!isPlayableTarget(slot)) {
+    if (!selectedHand || !isPlayableTargetForSelection(slot, selectedHand)) {
       return;
     }
-    void playToTarget(slot.target);
+    void playSelectionToTarget(selectedHand, slot.target);
   }
 
   function clickSlot(slot: PokemonSlotView) {
+    if (promptInputSuppressed && currentPrompt) {
+      return;
+    }
+
     if (attachPrompt && isBoardPromptSelectable(slot)) {
       assignAttachPromptTarget(slot);
       return;
@@ -600,6 +822,8 @@
   function resetGame() {
     if (replayMode) {
       replayStore.clear();
+      knownDecksByPlayer = {};
+      appliedKnownDeckLogKeys = [];
       zoneViewerStore.close();
       viewSettingsStore.resetView();
       homeMode = 'logs';
@@ -609,13 +833,15 @@
       return;
     }
     gameSessionStore.reset();
+    knownDecksByPlayer = {};
+    appliedKnownDeckLogKeys = [];
     zoneViewerStore.close();
     viewSettingsStore.resetView();
   }
 
   function dropToSlot(slot: PokemonSlotView, event: DragEvent) {
-    event.preventDefault();
-    event.stopPropagation();
+    const handSelection = draggingHand ?? selectedHand;
+    stopDropEvent(event);
     clearDragState();
     if (attachPrompt && isBoardPromptSelectable(slot)) {
       assignAttachPromptTarget(slot);
@@ -625,19 +851,20 @@
       placeSetupActive();
       return;
     }
-    if (isPlayableTarget(slot)) {
-      playToSlot(slot);
+    if (handSelection && isPlayableTargetForSelection(slot, handSelection)) {
+      void playSelectionToTarget(handSelection, slot.target);
       return;
     }
   }
 
   function dropToBoardPlay(event: DragEvent) {
-    if (!canPlayOnBoard) {
+    const handSelection = draggingHand ?? selectedHand;
+    if (!handSelection || !game || !activePlayer || !canPlayToAreaForSelection(activePlayer, handSelection)) {
       return;
     }
-    event.preventDefault();
+    stopDropEvent(event);
     clearDragState();
-    playSelectedToBoard();
+    playSelectionToBoard(handSelection);
   }
 
   function clickBoardPlay(event: MouseEvent) {
@@ -649,25 +876,35 @@
   }
 
   function dropToBenchArea(player: PlayerView, event: DragEvent) {
-    event.preventDefault();
-    event.stopPropagation();
+    const handSelection = draggingHand ?? selectedHand;
+    stopDropEvent(event);
     clearDragState();
     if (canPlaceSetupBench(player)) {
       placeSetupBench();
       return;
     }
-    playToBenchArea(player);
+    if (handSelection) {
+      playSelectionToBenchArea(player, handSelection);
+    }
   }
 
   function isPlayableTarget(slot: PokemonSlotView) {
+    return isPlayableTargetForSelection(slot, selectedHand);
+  }
+
+  function isPlayableTargetForSelection(slot: PokemonSlotView, handSelection: HandSelection | null | undefined) {
     if (setupPrompt) {
       return false;
     }
-    return canPlayCardToSlot(selectedCard, selectedHand?.playerIndex, slot);
+    return canPlayCardToSlot(handCardForSelection(handSelection), handSelection?.playerIndex, slot);
   }
 
   function benchAreaTarget(player: PlayerView) {
-    return playableBenchSlot(player, selectedCard, selectedHand?.playerIndex, !!setupPrompt);
+    return benchAreaTargetForSelection(player, selectedHand);
+  }
+
+  function benchAreaTargetForSelection(player: PlayerView, handSelection: HandSelection | null | undefined) {
+    return playableBenchSlot(player, handCardForSelection(handSelection), handSelection?.playerIndex, !!setupPrompt);
   }
 
   function canPlayToBenchArea(player: PlayerView) {
@@ -678,34 +915,386 @@
   }
 
   function playToBenchArea(player: PlayerView) {
-    const target = benchAreaTarget(player);
+    if (!selectedHand) {
+      return;
+    }
+    playSelectionToBenchArea(player, selectedHand);
+  }
+
+  function playSelectionToBenchArea(player: PlayerView, handSelection: HandSelection) {
+    const target = benchAreaTargetForSelection(player, handSelection);
     if (!target) {
       return;
     }
-    playToSlot(target);
+    void playSelectionToTarget(handSelection, target.target);
   }
 
   function canPlayToArea(player: PlayerView) {
+    return canPlayToAreaForSelection(player, selectedHand);
+  }
+
+  function canPlayToAreaForSelection(player: PlayerView, handSelection: HandSelection | null | undefined) {
     if (setupPrompt) {
       return false;
     }
-    return canAct(player.index) && canPlayCardToPlayArea(selectedCard, selectedHand?.playerIndex);
+    return canAct(player.index) && canPlayCardToPlayArea(handCardForSelection(handSelection), handSelection?.playerIndex);
   }
 
   function playSelectedToBoard() {
-    if (!game || !activePlayer || !canPlayToArea(activePlayer)) {
+    if (!selectedHand) {
       return;
     }
-    void playToTarget(targetFor(game.activePlayerIndex, game.activePlayerIndex, SlotType.ACTIVE));
+    playSelectionToBoard(selectedHand);
   }
 
-  function showZone(
-    playerIndex: number,
-    zone: 'discard' | 'lostZone' | 'stadium' | 'playZone',
-    title: string,
-    faceDown = false,
-  ) {
+  function playSelectionToBoard(handSelection: HandSelection) {
+    if (!game || !activePlayer || !canPlayToAreaForSelection(activePlayer, handSelection)) {
+      return;
+    }
+    void playSelectionToTarget(handSelection, targetFor(game.activePlayerIndex, game.activePlayerIndex, SlotType.ACTIVE));
+  }
+
+  function showZone(playerIndex: number, zone: 'deck' | 'discard' | 'lostZone' | 'prize' | 'stadium' | 'playZone', title: string, faceDown = false) {
     zoneViewerStore.show(playerIndex, zone, title, faceDown);
+  }
+
+  function rememberVisibleDecks(currentGame: GameView | null | undefined, prompt: PromptView | null | undefined) {
+    if (!currentGame) {
+      return;
+    }
+
+    for (const player of currentGame.players) {
+      if (player.deck?.length) {
+        rememberKnownDeck(player.index, player.deck, player.deck.length >= player.deckCount);
+      }
+    }
+
+    const promptDeck = promptDeckCards(prompt);
+    if (promptDeck.length && typeof prompt?.playerIndex === 'number') {
+      const deckCount = currentGame.players[prompt.playerIndex]?.deckCount ?? promptDeck.length;
+      rememberKnownDeck(prompt.playerIndex, promptDeck, promptDeck.length >= deckCount);
+    }
+
+    const observation = currentGame.events.at(-1) as {
+      current?: { yourIndex?: number; looking?: unknown[] | null };
+      select?: { deck?: unknown[] | null };
+    } | undefined;
+    const viewerIndex = observation?.current?.yourIndex;
+    if (typeof viewerIndex !== 'number') {
+      return;
+    }
+
+    const selectDeck = rawDeckCards(observation?.select?.deck);
+    if (selectDeck.length) {
+      const deckCount = currentGame.players[viewerIndex]?.deckCount ?? selectDeck.length;
+      rememberKnownDeck(viewerIndex, selectDeck, selectDeck.length >= deckCount);
+    }
+
+    const lookingCards = rawDeckCards(observation?.current?.looking);
+    if (lookingCards.length) {
+      const deckCount = currentGame.players[viewerIndex]?.deckCount ?? lookingCards.length;
+      rememberKnownDeck(viewerIndex, lookingCards, lookingCards.length >= deckCount);
+    }
+
+    applyKnownDeckMovementLogs(currentGame);
+    trimKnownDecksToCurrentCounts(currentGame);
+  }
+
+  function promptDeckCards(prompt: PromptView | null | undefined): CardView[] {
+    const cabtSelect = prompt?.fields?.cabtSelect as { deck?: unknown[] | null } | undefined;
+    return rawDeckCards(cabtSelect?.deck);
+  }
+
+  function rawDeckCards(rawCards: unknown): CardView[] {
+    if (!Array.isArray(rawCards)) {
+      return [];
+    }
+    return rawCards
+      .map(cardRefToView)
+      .filter((card): card is CardView => !!card);
+  }
+
+  function cardRefToView(rawCard: unknown): CardView | null {
+    if (!rawCard || typeof rawCard !== 'object') {
+      return null;
+    }
+    const ref = rawCard as CabtCardRef;
+    const id = typeof ref.id === 'number' ? ref.id : ref.cardId;
+    if (typeof id !== 'number') {
+      return null;
+    }
+    const row = cardRows.find((card) => card.id === id);
+    if (!row) {
+      const unknown: CardView = {
+        id,
+        serial: ref.serial,
+        name: `Card ${id}`,
+        fullName: `Card ${id}`,
+      };
+      return {
+        ...unknown,
+        imageUrl: resolveCardImageUrl(unknown),
+      };
+    }
+    const card: CardView = {
+      id: row.id,
+      serial: ref.serial,
+      name: row.name,
+      fullName: row.name,
+      set: row.set,
+      setNumber: row.setNumber,
+      superType: row.cardType === 0 ? 'Pokemon' : row.cardType === 5 ? 'Energy' : 'Trainer',
+      trainerType: row.cardType >= 1 && row.cardType <= 4 ? row.cardType : undefined,
+      energyType: row.cardType === 5 ? row.energyType : undefined,
+      stage: row.basic ? 2 : row.stage1 ? 3 : row.stage2 ? 4 : undefined,
+      hp: row.hp ?? undefined,
+    };
+    return {
+      ...card,
+      imageUrl: resolveCardImageUrl(card),
+    };
+  }
+
+  function rememberKnownDeck(playerIndex: number, cards: CardView[], complete: boolean) {
+    if (!cards.length) {
+      return;
+    }
+    const current = knownDecksByPlayer[playerIndex];
+    if (
+      current
+      && current.complete === complete
+      && deckSignature(current.cards) === deckSignature(cards)
+    ) {
+      return;
+    }
+    knownDecksByPlayer = {
+      ...knownDecksByPlayer,
+      [playerIndex]: { cards, complete },
+    };
+  }
+
+  function deckSignature(cards: CardView[]) {
+    return cards.map((card) => card.serial ?? card.id ?? card.fullName).join(',');
+  }
+
+  function applyKnownDeckMovementLogs(currentGame: GameView) {
+    const observation = currentGame.events.at(-1) as {
+      logs?: unknown[];
+      current?: { turn?: number; turnActionCount?: number };
+    } | undefined;
+    const logs = observation?.logs;
+    if (!Array.isArray(logs)) {
+      return;
+    }
+
+    let nextDecks = knownDecksByPlayer;
+    const nextApplied = [...appliedKnownDeckLogKeys];
+    for (const rawLog of logs) {
+      if (!rawLog || typeof rawLog !== 'object') {
+        continue;
+      }
+      const log = rawLog as CabtMoveLog;
+      const key = knownDeckLogKey(log, observation?.current);
+      if (!key || nextApplied.includes(key)) {
+        continue;
+      }
+      nextApplied.push(key);
+
+      if (isKnownDeckSource(log.fromArea) && !isKnownDeckSource(log.toArea) && typeof log.playerIndex === 'number') {
+        const updated = removeKnownDeckCard(nextDecks[log.playerIndex], log);
+        if (updated) {
+          nextDecks = {
+            ...nextDecks,
+            [log.playerIndex]: updated,
+          };
+        }
+      }
+      if (isKnownDeckSource(log.toArea) && !isKnownDeckSource(log.fromArea) && typeof log.playerIndex === 'number') {
+        const updated = addKnownDeckCard(nextDecks[log.playerIndex], log);
+        if (updated) {
+          nextDecks = {
+            ...nextDecks,
+            [log.playerIndex]: updated,
+          };
+        }
+      }
+    }
+
+    if (nextDecks !== knownDecksByPlayer) {
+      knownDecksByPlayer = nextDecks;
+    }
+    if (nextApplied.length !== appliedKnownDeckLogKeys.length) {
+      appliedKnownDeckLogKeys = nextApplied.slice(-300);
+    }
+  }
+
+  function isKnownDeckSource(area: unknown) {
+    return area === CabtAreaType.DECK || area === CabtAreaType.LOOKING;
+  }
+
+  function knownDeckLogKey(log: CabtMoveLog, current: { turn?: number; turnActionCount?: number } | undefined) {
+    if (typeof log.playerIndex !== 'number' || typeof log.fromArea !== 'number' || typeof log.toArea !== 'number') {
+      return '';
+    }
+    return [
+      current?.turn ?? '',
+      current?.turnActionCount ?? '',
+      log.type ?? '',
+      log.playerIndex,
+      log.fromArea,
+      log.toArea,
+      log.serial ?? '',
+      log.cardId ?? '',
+    ].join(':');
+  }
+
+  function removeKnownDeckCard(memory: KnownDeckMemory | undefined, log: CabtMoveLog): KnownDeckMemory | undefined {
+    if (!memory?.cards.length) {
+      return undefined;
+    }
+    const index = knownDeckCardIndex(memory.cards, log);
+    const removeIndex = index >= 0 ? index : 0;
+    return {
+      ...memory,
+      cards: memory.cards.filter((_card, cardIndex) => cardIndex !== removeIndex),
+    };
+  }
+
+  function addKnownDeckCard(memory: KnownDeckMemory | undefined, log: CabtMoveLog): KnownDeckMemory | undefined {
+    const card = cardRefToView({ id: log.cardId, serial: log.serial });
+    if (!memory || !card) {
+      return undefined;
+    }
+    if (knownDeckCardIndex(memory.cards, log) >= 0) {
+      return memory;
+    }
+    return {
+      cards: [...memory.cards, card],
+      complete: false,
+    };
+  }
+
+  function knownDeckCardIndex(cards: CardView[], log: CabtMoveLog) {
+    if (typeof log.serial === 'number') {
+      const bySerial = cards.findIndex((card) => card.serial === log.serial);
+      if (bySerial >= 0) {
+        return bySerial;
+      }
+    }
+    if (typeof log.cardId === 'number') {
+      return cards.findIndex((card) => card.id === log.cardId);
+    }
+    return -1;
+  }
+
+  function trimKnownDecksToCurrentCounts(currentGame: GameView) {
+    let nextDecks = knownDecksByPlayer;
+    for (const player of currentGame.players) {
+      const memory = nextDecks[player.index];
+      if (!memory?.cards.length) {
+        continue;
+      }
+      if (player.deckCount < memory.cards.length) {
+        nextDecks = {
+          ...nextDecks,
+          [player.index]: {
+            ...memory,
+            cards: memory.cards.slice(memory.cards.length - player.deckCount),
+          },
+        };
+      } else if (player.deckCount > memory.cards.length && memory.complete) {
+        nextDecks = {
+          ...nextDecks,
+          [player.index]: {
+            ...memory,
+            complete: false,
+          },
+        };
+      }
+    }
+    if (nextDecks !== knownDecksByPlayer) {
+      knownDecksByPlayer = nextDecks;
+    }
+  }
+
+  function playerWithKnownDeck(player: PlayerView): PlayerView {
+    const memory = knownDecksByPlayer[player.index];
+    if (!memory?.cards.length) {
+      return player;
+    }
+    return {
+      ...player,
+      deck: memory.cards,
+    };
+  }
+
+  function cardsForOpenZone(currentGame: GameView | null | undefined) {
+    const openZone = zoneViewerStore.openZone;
+    if (!openZone || !currentGame) {
+      return [];
+    }
+    if (openZone.zone === 'deck') {
+      const memory = knownDecksByPlayer[openZone.playerIndex];
+      if (memory?.cards.length) {
+        return memory.cards;
+      }
+    }
+    return zoneViewerStore.cardsFor(currentGame);
+  }
+
+  function displayZoneViewerTitle() {
+    const openZone = zoneViewerStore.openZone;
+    if (openZone?.zone !== 'deck') {
+      return zoneViewerStore.title;
+    }
+    const memory = knownDecksByPlayer[openZone.playerIndex];
+    if (!memory?.cards.length) {
+      return zoneViewerStore.title;
+    }
+    return memory.complete
+      ? `${zoneViewerStore.title}（確認済み）`
+      : `${zoneViewerStore.title}で確認したカード`;
+  }
+
+  function displayZoneViewerFaceDown() {
+    const openZone = zoneViewerStore.openZone;
+    if (openZone?.zone === 'deck' && knownDecksByPlayer[openZone.playerIndex]?.cards.length) {
+      return false;
+    }
+    return zoneViewerStore.faceDown;
+  }
+
+  function resolveWorkbenchReturnUrl() {
+    if (typeof window === 'undefined') {
+      return 'http://127.0.0.1:8787/';
+    }
+    const explicit = new URLSearchParams(window.location.search).get('workbench')
+      ?? new URLSearchParams(window.location.search).get('returnTo')
+      ?? new URLSearchParams(window.location.search).get('return_url');
+    if (explicit) {
+      try {
+        const explicitUrl = new URL(explicit);
+        if (explicitUrl.protocol === 'http:' || explicitUrl.protocol === 'https:') {
+          return explicitUrl.toString();
+        }
+      } catch {
+        // Ignore malformed return URLs and fall back to the current host.
+      }
+    }
+    try {
+      const referrer = document.referrer ? new URL(document.referrer) : null;
+      if (referrer && referrer.hostname === window.location.hostname && referrer.port === '8787') {
+        return referrer.toString();
+      }
+    } catch {
+      // Ignore malformed referrers and fall back to the current host.
+    }
+    const fallback = new URL(window.location.href);
+    fallback.port = '8787';
+    fallback.pathname = '/';
+    fallback.search = '';
+    fallback.hash = '';
+    return fallback.toString();
   }
 
   function normalizePromptLimit(value: unknown, fallback: number) {
@@ -713,7 +1302,7 @@
   }
 
   function canAct(playerIndex: number) {
-    if (replayMode) {
+    if (replayMode || liveTimelineBrowsingPast) {
       return false;
     }
     return canPlayerAct({
@@ -745,6 +1334,9 @@
   }
 
   function isBoardPromptSelectable(slot: PokemonSlotView) {
+    if (promptInputSuppressed) {
+      return false;
+    }
     if (attachPrompt) {
       if (slot.empty) {
         return false;
@@ -785,6 +1377,32 @@
     return boardStrategy.deltaFor(targetForPromptSlot(currentPrompt, slot));
   }
 
+  function damageQuickAmounts(slot: PokemonSlotView) {
+    if (!boardStrategy?.adjustDamage || !boardStrategy.quickAmounts || !currentPrompt || slot.empty) {
+      return [];
+    }
+    const target = targetForPromptSlot(currentPrompt, slot);
+    return boardStrategy.isEligible(target) ? boardStrategy.quickAmounts : [];
+  }
+
+  function canAdjustSlotDamage(slot: PokemonSlotView, amount: number) {
+    if (!boardStrategy?.canAdjustDamage || !currentPrompt || slot.empty || promptResolvingBlocked) {
+      return false;
+    }
+    return boardStrategy.canAdjustDamage(targetForPromptSlot(currentPrompt, slot), amount);
+  }
+
+  function adjustSlotDamage(slot: PokemonSlotView, amount: number) {
+    if (!boardStrategy?.adjustDamage || !currentPrompt || slot.empty || promptResolvingBlocked) {
+      return;
+    }
+    const target = targetForPromptSlot(currentPrompt, slot);
+    if (boardStrategy.canAdjustDamage && !boardStrategy.canAdjustDamage(target, amount)) {
+      return;
+    }
+    boardStrategy.adjustDamage(target, amount);
+  }
+
   function dispatchBoardClick(slot: PokemonSlotView) {
     if (!currentPrompt && retreatSource) {
       if (canRetreatToSelectedTarget(slot)) {
@@ -792,6 +1410,9 @@
         return true;
       }
       retreatSource = null;
+      return false;
+    }
+    if (promptInputSuppressed) {
       return false;
     }
     if (!boardStrategy || !currentPrompt || slot.empty) {
@@ -806,10 +1427,10 @@
   }
 
   function clickBoardPromptSlotAtPoint(event: MouseEvent) {
-    if (!boardStrategy || resolvingPrompt) {
+    if (!boardStrategy || promptResolvingBlocked) {
       return;
     }
-    if (event.target instanceof Element && event.target.closest('.prompt-dock, .prompt-strip')) {
+    if (event.target instanceof Element && event.target.closest('.prompt-dock, .prompt-strip, .damage-quick-controls')) {
       return;
     }
     const slot = boardPromptSlotAtPoint(event.clientX, event.clientY);
@@ -914,35 +1535,79 @@
     await resolvePrompt(setupPromptResult(setupHasEngineActive, setupActiveIndex, setupBenchIndexes));
   }
 
+  function isTextInputTarget(target: EventTarget | null) {
+    return (
+      target instanceof HTMLElement &&
+      (target.isContentEditable || !!target.closest('input, textarea, select, [contenteditable="true"]'))
+    );
+  }
+
+  function handleReplayKeydown(event: KeyboardEvent) {
+    if (!replayMode || !replayStore.replay || cardPreviewStore.open || isTextInputTarget(event.target)) {
+      return;
+    }
+    if (event.shiftKey && event.key === 'ArrowRight' && replayStore.nextReplay) {
+      event.preventDefault();
+      void replayStore.nextSavedReplay();
+      return;
+    }
+    if (event.shiftKey && event.key === 'ArrowLeft' && replayStore.previousReplay) {
+      event.preventDefault();
+      void replayStore.previousSavedReplay();
+      return;
+    }
+    if (event.key === 'ArrowRight') {
+      event.preventDefault();
+      replayStore.nextStep();
+      return;
+    }
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault();
+      replayStore.previousStep();
+      return;
+    }
+    if (event.key === 'ArrowDown' && bottomPlayer && replayStore.canSkipOpponentTurn(bottomPlayer.index)) {
+      event.preventDefault();
+      replayStore.skipOpponentTurn(bottomPlayer.index);
+    }
+  }
+
 </script>
+
+<svelte:window onkeydown={handleReplayKeydown} />
 
 {#if showPromptGallery}
   <PromptGallery />
 {:else}
 <main>
   {#if replayMode && !game}
-    <AppHeader />
+    <AppHeader workbenchUrl={workbenchReturnUrl} />
     <section class="replay-loading-screen">
       <div class="replay-loading-panel">
-        <strong>{replayStore.loading ? 'Loading replay' : 'Replay unavailable'}</strong>
-        <span>{replayStore.loading ? 'Preparing CABT replay frames.' : labelFor(error || 'Unable to load replay.')}</span>
+        <strong>{replayStore.loading ? 'リプレイ読み込み中' : 'リプレイを表示できません'}</strong>
+        <span>{replayStore.loading ? '対戦リプレイの盤面を準備しています。' : labelFor(error || 'リプレイを読み込めません。')}</span>
       </div>
     </section>
   {:else if !game}
-    <AppHeader />
+    <AppHeader workbenchUrl={workbenchReturnUrl} />
 
       <ImportScreen
         {homeMode}
         bind:deck1Text={deckImportStore.deck1Text}
         bind:deck2Text={deckImportStore.deck2Text}
         bind:selectedAgentId
+        bind:selectedPlayerDeckId
+        bind:selectedOpponentDeckId
         {agents}
         {gameLogs}
-        opponentDeckLocked={!!selectedAgent?.deckUrl}
+        {roundRobinDeckCatalog}
+        {uploadedDecks}
         busy={sessionBusy}
         {catalogBusy}
+        {uploadBusy}
         {error}
         {catalogError}
+        {uploadError}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
@@ -952,6 +1617,8 @@
           }
         }}
         startGame={startGame}
+        {uploadDeckFiles}
+        {deleteUploadedDeck}
         {loadGameLog}
         refreshCatalog={() => void refreshCatalog()}
       />
@@ -985,7 +1652,7 @@
         {switchSides}
         switchDisabled={false}
         {resetGame}
-        resetLabel={replayMode ? 'Exit replay' : 'Change decks'}
+        resetLabel={replayMode ? 'リプレイを終了' : '元の画面に戻る'}
       />
 
       {#if replayMode && replayStore.replay && replayStore.currentStep}
@@ -994,36 +1661,83 @@
           step={replayStore.currentStep}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          copiedQuestionContext={replayStore.copiedQuestionContext}
+          questionContextText={replayStore.questionContextText}
           setStep={(index) => replayStore.setStep(index)}
           setStateIndex={(index) => replayStore.setStateIndex(index)}
           previousStep={() => replayStore.previousStep()}
           nextStep={() => replayStore.nextStep()}
           firstStep={() => replayStore.firstStep()}
           lastStep={() => replayStore.lastStep()}
+          canSkipOpponentTurn={replayStore.canSkipOpponentTurn(bottomPlayer.index)}
+          canReplayFromStep={false}
+          skipOpponentTurn={() => replayStore.skipOpponentTurn(bottomPlayer.index)}
+          replayFromStep={() => {}}
           copyForkPoint={() => void replayStore.copyForkPoint()}
+          copyQuestionContext={() => void replayStore.copyQuestionContext()}
+          clearQuestionContextText={() => replayStore.clearQuestionContextText()}
+          workbenchUrl={workbenchReturnUrl}
+          previousReplayLabel={replayStore.previousReplay?.label}
+          nextReplayLabel={replayStore.nextReplay?.label}
+          previousReplay={() => void replayStore.previousSavedReplay()}
+          nextReplay={() => void replayStore.nextSavedReplay()}
+        />
+        <ManualLabelPanel
+          replay={replayStore.replay}
+          step={replayStore.currentStep}
+          view={replayStore.currentView}
+          replayId={replayStore.currentReplayId}
+        />
+      {/if}
+
+      {#if liveTimelineMode && liveTimelineStore.replay && liveTimelineStore.currentStep && bottomPlayer}
+        <ReplayTimeline
+          replay={liveTimelineStore.replay}
+          step={liveTimelineStore.currentStep}
+          stepIndex={liveTimelineStore.stepIndex}
+          copiedQuestionContext={liveTimelineStore.copiedQuestionContext}
+          questionContextText={liveTimelineStore.questionContextText}
+          setStep={(index) => liveTimelineStore.setStep(index)}
+          setStateIndex={(index) => liveTimelineStore.setStateIndex(index)}
+          previousStep={() => liveTimelineStore.previousStep()}
+          nextStep={() => liveTimelineStore.nextStep()}
+          firstStep={() => liveTimelineStore.firstStep()}
+          lastStep={() => liveTimelineStore.lastStep()}
+          canSkipOpponentTurn={liveTimelineStore.canSkipOpponentTurn(bottomPlayer.index)}
+          canReplayFromStep={liveTimelineStore.isBrowsingPast}
+          skipOpponentTurn={() => liveTimelineStore.skipOpponentTurn(bottomPlayer.index)}
+          replayFromStep={() => void replayLiveFromCurrentStep()}
+          copyForkPoint={() => {}}
+          copyQuestionContext={() => void liveTimelineStore.copyQuestionContext()}
+          clearQuestionContextText={() => liveTimelineStore.clearQuestionContextText()}
+          showMatchControls={false}
+          showStateControls={false}
+          workbenchUrl=""
+          previousReplay={() => {}}
+          nextReplay={() => {}}
         />
       {/if}
 
       {#if gameFinished && !replayMode}
-        <EndGamePrompt resultLabel={gameResultLabel} turn={game.turn} onconfirm={resetGame} />
+        <EndGamePrompt resultLabel={gameResultLabel} turn={game.turn} onBack={resetGame} onRematch={() => void startGame()} />
       {/if}
 
       {#if setupPrompt}
         <SetupDock
           needsActive={setupNeedsActive}
           canConfirm={setupCanConfirm}
-          resolving={resolvingPrompt}
+          resolving={promptResolvingBlocked}
           confirm={confirmSetupPokemon}
         />
       {:else if boardStrategy}
-        <BoardPromptStrip strategy={boardStrategy} resolving={resolvingPrompt} />
+        <BoardPromptStrip strategy={boardStrategy} resolving={promptResolvingBlocked} />
       {:else if currentPrompt && !autoResolvePrompt}
         <PromptDock mode={currentPromptDockMode}>
           {#key promptInstanceKey(currentPrompt)}
             <PromptHost
               game={game}
               prompt={currentPrompt}
-              resolving={resolvingPrompt}
+              resolving={promptResolvingBlocked}
               activeAttachEnergyIndex={attachPromptEnergyIndex}
               attachAssignments={attachPromptAssignments}
               onresolve={resolvePrompt}
@@ -1051,8 +1765,8 @@
         </PlayerPanel>
 
         <GameBoard
-          {topPlayer}
-          {bottomPlayer}
+          topPlayer={topPlayerWithKnownDeck ?? topPlayer}
+          bottomPlayer={bottomPlayerWithKnownDeck ?? bottomPlayer}
           {topBenchSlots}
           {bottomBenchSlots}
           {topActiveSlot}
@@ -1069,6 +1783,9 @@
           {isBoardPromptSelectable}
           {isBoardPromptSelected}
           {boardSlotDelta}
+          {damageQuickAmounts}
+          {canAdjustSlotDamage}
+          {adjustSlotDamage}
           {clickSlot}
           {allowDrop}
           {dropToSlot}
@@ -1083,6 +1800,9 @@
           {boardPerspective}
           {boardScaleY}
           {boardLift}
+          onProjectedPileHoverChange={(pileKey) => {
+            projectedPileHover = pileKey;
+          }}
         />
 
         <PlayerPanel side="bottom">
@@ -1092,6 +1812,8 @@
             disabled={!canAct(bottomPlayer.index) && setupPrompt?.playerIndex !== bottomPlayer.index}
             playableIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlayableIndexes : []}
             placedIndexes={setupPrompt?.playerIndex === bottomPlayer.index ? setupPlacedIndexes : []}
+            expandable
+            forceCollapsed={bottomHandForceCollapsed}
             onSelect={selectHandCard}
             onDrag={onHandDrag}
             onDragEnd={clearDragState}
@@ -1103,9 +1825,10 @@
             slot={focusedSlot}
             availableActions={focusedPlayer?.availableActions}
             benchTargets={focusedBenchTargets}
-            busy={sessionBusy}
-            promptActive={!!currentPrompt}
-            canAct={focusedCanAct}
+	            busy={sessionBusy}
+	            promptActive={!!currentPrompt}
+	            {replayMode}
+	            canAct={focusedCanAct}
             {canRetreatToSlot}
             close={() => {
               selectionStore.clearFocus();
@@ -1123,26 +1846,27 @@
         <ZoneViewer
           open={zoneViewerOpen}
           title={zoneViewerTitle}
-          cards={viewedCards}
-          faceDown={zoneViewerFaceDown}
-          actionLabel={zoneViewerIsStadium && viewedCards.length ? 'Use stadium' : ''}
-          actionDisabled={sessionBusy || !!currentPrompt || gameFinished || replayMode}
-          actionTitle="Use this stadium's once-per-turn effect"
+	          cards={viewedCards}
+	          faceDown={zoneViewerFaceDown}
+	          actionLabel={zoneViewerIsStadium && viewedCards.length && !replayMode ? 'スタジアムを使う' : ''}
+	          actionDisabled={sessionBusy || !!currentPrompt || gameFinished || replayMode}
+	          actionTitle="このスタジアムの効果を使う"
           onAction={useStadium}
           close={() => zoneViewerStore.close()}
         />
       </BoardLayer>
     </TableShell>
   {:else}
-    <AppHeader />
+    <AppHeader workbenchUrl={workbenchReturnUrl} />
     <section class="replay-loading-screen">
       <div class="replay-loading-panel">
-        <strong>Unable to start game</strong>
-        <span>{labelFor(error || game.logs.at(-1)?.message || 'The engine returned an invalid pre-game state.')}</span>
-        <button type="button" onclick={resetGame}>Change decks</button>
+        <strong>対戦を開始できません</strong>
+        <span>{labelFor(error || game.logs.at(-1)?.message || 'エンジンが不正な開始前状態を返しました。')}</span>
+        <button type="button" onclick={resetGame}>デッキ変更</button>
       </div>
     </section>
   {/if}
+  <CardPreview />
 </main>
 {/if}
 

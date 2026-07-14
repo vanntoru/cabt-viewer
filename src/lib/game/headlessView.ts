@@ -53,11 +53,13 @@ function buildPlayerView(player: any, index: number, activePlayerIndex: number):
     id: player.id,
     name: player.name,
     hand: normalizeCards(player.hand),
+    deck: normalizeCards(player.deck),
     deckCount: player.deckCount ?? 0,
     discard: normalizeCards(player.discard),
     lostZone: normalizeCards(player.lostZone),
     stadium: normalizeCards(player.stadium),
     playZone: normalizeCards(player.playZone),
+    prize: normalizeCards(player.prize),
     prizesLeft: player.prizesLeft ?? 0,
     active: buildPokemonSlot(player.active, index, 'active', 0, activePlayerIndex),
     bench: Array.isArray(player.bench)
@@ -116,6 +118,7 @@ function normalizeCard(card: any): CardView | undefined {
   }
   return {
     id: card.id,
+    serial: card.serial,
     name: card.name ?? card.fullName ?? 'Unknown',
     fullName: card.fullName ?? card.name ?? 'Unknown',
     set: card.set,

@@ -18,7 +18,7 @@ describe('energy and Pokemon type icon helpers', () => {
     expect(normalizedTypeName('{G}')).toBe('grass');
     expect(normalizedTypeName('Dark')).toBe('darkness');
     expect(pokemonTypeIconSrc('Fire')).toBe('/assets/energy-icons/fire.webp');
-    expect(pokemonTypeLabelFor('Psychic')).toBe('Psychic');
-    expect(pokemonTypeLabelFor(undefined)).toBe('Pokemon');
+    expect(pokemonTypeLabelFor('Psychic')).toBe('超');
+    expect(pokemonTypeLabelFor(undefined)).toBe('ポケモン');
   });
 });

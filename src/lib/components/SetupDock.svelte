@@ -10,14 +10,14 @@
 </script>
 
 <div class="setup-dock">
-  <strong>Choose your starting Pokemon</strong>
+  <strong>最初のポケモンを選ぶ</strong>
   <span>
     {needsActive
-      ? 'Drag a highlighted Basic to Active, then optionally place Basics on the Bench.'
-      : 'Optionally drag highlighted Basics to the Bench, then confirm.'}
+      ? '光っているたねポケモンをバトル場へ置き、必要ならベンチにも置きます。'
+      : '必要なら光っているたねポケモンをベンチへ置き、確定します。'}
   </span>
   <button class="primary" disabled={resolving || !canConfirm} onclick={confirm}>
-    Confirm setup
+    配置を確定
   </button>
 </div>
 

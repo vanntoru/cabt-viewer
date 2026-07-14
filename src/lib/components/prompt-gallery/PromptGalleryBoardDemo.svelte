@@ -14,6 +14,7 @@
   import type { CardTarget, GameView, PlayerView, PokemonSlotView, PromptView } from '../../game/types';
   import {
     addDamagePlacement,
+    adjustDamagePlacement,
     assignAttachTarget,
     canAssignAttachTarget,
     damageForTarget as damageForTargetModel,
@@ -72,6 +73,15 @@
           },
           placeDamage(target, amount, requiredDamage, maxAllowedDamage) {
             damagePlacements = addDamagePlacement(
+              damagePlacements,
+              target,
+              amount,
+              requiredDamage,
+              maxDamageForTarget(maxAllowedDamage, target),
+            );
+          },
+          adjustDamage(target, amount, requiredDamage, maxAllowedDamage) {
+            damagePlacements = adjustDamagePlacement(
               damagePlacements,
               target,
               amount,
@@ -224,6 +234,32 @@
     return promptStrategy.deltaFor(targetForPromptSlot(prompt, slot));
   }
 
+  function damageQuickAmounts(slot: PokemonSlotView) {
+    if (!promptStrategy?.adjustDamage || !promptStrategy.quickAmounts || slot.empty) {
+      return [];
+    }
+    const target = targetForPromptSlot(prompt, slot);
+    return promptStrategy.isEligible(target) ? promptStrategy.quickAmounts : [];
+  }
+
+  function canAdjustSlotDamage(slot: PokemonSlotView, amount: number) {
+    if (!promptStrategy?.canAdjustDamage || slot.empty) {
+      return false;
+    }
+    return promptStrategy.canAdjustDamage(targetForPromptSlot(prompt, slot), amount);
+  }
+
+  function adjustSlotDamage(slot: PokemonSlotView, amount: number) {
+    if (!promptStrategy?.adjustDamage || slot.empty) {
+      return;
+    }
+    const target = targetForPromptSlot(prompt, slot);
+    if (promptStrategy.canAdjustDamage && !promptStrategy.canAdjustDamage(target, amount)) {
+      return;
+    }
+    promptStrategy.adjustDamage(target, amount);
+  }
+
   function clickSlot(slot: PokemonSlotView) {
     if (slot.empty) {
       return;
@@ -313,6 +349,9 @@
       {isBoardPromptSelectable}
       {isBoardPromptSelected}
       {boardSlotDelta}
+      {damageQuickAmounts}
+      {canAdjustSlotDamage}
+      {adjustSlotDamage}
       {clickSlot}
       {allowDrop}
       dropToSlot={noop}

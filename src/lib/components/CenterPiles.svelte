@@ -1,5 +1,6 @@
 <script lang="ts">
   import CardTile from './CardTile.svelte';
+  import { zoneNameJa } from '../game/jaText';
   import type { PlayerView } from '../game/types';
 
   type Props = {
@@ -13,6 +14,8 @@
     bottomDiscardPileElement?: HTMLButtonElement;
     showLostZone: (player: PlayerView) => void;
     showDiscard: (player: PlayerView) => void;
+    showDeck: (player: PlayerView) => void;
+    showPrize: (player: PlayerView) => void;
   };
 
   let {
@@ -26,6 +29,8 @@
     bottomDiscardPileElement = $bindable(),
     showLostZone,
     showDiscard,
+    showDeck,
+    showPrize,
   }: Props = $props();
 
   function deckPileStyle(deckCount: number, direction: -1 | 1) {
@@ -48,6 +53,38 @@
     const count = Math.min(6, Math.max(0, Math.round(prizesLeft)));
     return Array.from({ length: count }, (_, index) => index);
   }
+
+  function openLostZone(event: MouseEvent, player: PlayerView) {
+    event.preventDefault();
+    event.stopPropagation();
+    showLostZone(player);
+  }
+
+  function openDiscard(event: MouseEvent, player: PlayerView) {
+    event.preventDefault();
+    event.stopPropagation();
+    showDiscard(player);
+  }
+
+  function openDeck(event: MouseEvent, player: PlayerView) {
+    event.preventDefault();
+    event.stopPropagation();
+    showDeck(player);
+  }
+
+  function openPrize(event: MouseEvent, player: PlayerView) {
+    event.preventDefault();
+    event.stopPropagation();
+    showPrize(player);
+  }
+
+  function canInspectDeck(player: PlayerView) {
+    return !!player.deck?.length;
+  }
+
+  function canInspectPrize(player: PlayerView) {
+    return !!player.prize?.length;
+  }
 </script>
 
 <div class="center-stack">
@@ -57,24 +94,38 @@
         type="button"
         class="stack-pile lost-pile"
         class:projected-hover={projectedHoverPile === 'top-lost'}
-        title={`${topPlayer.name} lost zone`}
+        title={`${topPlayer.name}の${zoneNameJa('lostZone')}`}
         bind:this={topLostPileElement}
-        onclick={() => showLostZone(topPlayer)}
+        onclick={(event) => openLostZone(event, topPlayer)}
       >
         {#if topPlayer.lostZone.length}
           <CardTile card={topPlayer.lostZone[topPlayer.lostZone.length - 1]} compact />
         {/if}
         <span class="pile-count">{topPlayer.lostZone.length}</span>
       </button>
-      <div class="prize-grid" title={`${topPlayer.name} prizes`} aria-label={`${topPlayer.name} prizes`}>
+      <button
+        type="button"
+        class="prize-grid"
+        disabled={!canInspectPrize(topPlayer)}
+        title={`${topPlayer.name}の${zoneNameJa('prize')}`}
+        aria-label={`${topPlayer.name}の${zoneNameJa('prize')}`}
+        onclick={(event) => openPrize(event, topPlayer)}
+      >
         {#each visiblePrizeCards(topPlayer.prizesLeft) as index}
           <span style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2};`}></span>
         {/each}
-      </div>
+      </button>
     </div>
     <div class="right-field">
       <div class="right-piles">
-        <span class="stack-pile deck-pile" style={deckPileStyle(topPlayer.deckCount, -1)} title={`${topPlayer.name} deck`}>
+        <button
+          type="button"
+          class="stack-pile deck-pile"
+          disabled={!canInspectDeck(topPlayer)}
+          style={deckPileStyle(topPlayer.deckCount, -1)}
+          title={`${topPlayer.name}の${zoneNameJa('deck')}`}
+          onclick={(event) => openDeck(event, topPlayer)}
+        >
           {#each visibleDeckLayers(topPlayer.deckCount) as layer, layerIndex}
             <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
           {/each}
@@ -82,14 +133,14 @@
             <span class="deck-card-face"></span>
           {/if}
           <span class="pile-count">{topPlayer.deckCount}</span>
-        </span>
+        </button>
         <button
           type="button"
           class="stack-pile discard-pile"
           class:projected-hover={projectedHoverPile === 'top-discard'}
-          title={`${topPlayer.name} discard`}
+          title={`${topPlayer.name}の${zoneNameJa('discard')}`}
           bind:this={topDiscardPileElement}
-          onclick={() => showDiscard(topPlayer)}
+          onclick={(event) => openDiscard(event, topPlayer)}
         >
           {#if topPlayer.discard.length}
             <CardTile card={topPlayer.discard[topPlayer.discard.length - 1]} compact />
@@ -106,24 +157,38 @@
         type="button"
         class="stack-pile lost-pile"
         class:projected-hover={projectedHoverPile === 'bottom-lost'}
-        title={`${bottomPlayer.name} lost zone`}
+        title={`${bottomPlayer.name}の${zoneNameJa('lostZone')}`}
         bind:this={bottomLostPileElement}
-        onclick={() => showLostZone(bottomPlayer)}
+        onclick={(event) => openLostZone(event, bottomPlayer)}
       >
         {#if bottomPlayer.lostZone.length}
           <CardTile card={bottomPlayer.lostZone[bottomPlayer.lostZone.length - 1]} compact />
         {/if}
         <span class="pile-count">{bottomPlayer.lostZone.length}</span>
       </button>
-      <div class="prize-grid" title={`${bottomPlayer.name} prizes`} aria-label={`${bottomPlayer.name} prizes`}>
+      <button
+        type="button"
+        class="prize-grid"
+        disabled={!canInspectPrize(bottomPlayer)}
+        title={`${bottomPlayer.name}の${zoneNameJa('prize')}`}
+        aria-label={`${bottomPlayer.name}の${zoneNameJa('prize')}`}
+        onclick={(event) => openPrize(event, bottomPlayer)}
+      >
         {#each visiblePrizeCards(bottomPlayer.prizesLeft) as index}
           <span style={`--row: ${Math.floor(index / 2)}; --col: ${index % 2};`}></span>
         {/each}
-      </div>
+      </button>
     </div>
     <div class="right-field">
       <div class="right-piles">
-        <span class="stack-pile deck-pile" style={deckPileStyle(bottomPlayer.deckCount, 1)} title={`${bottomPlayer.name} deck`}>
+        <button
+          type="button"
+          class="stack-pile deck-pile"
+          disabled={!canInspectDeck(bottomPlayer)}
+          style={deckPileStyle(bottomPlayer.deckCount, 1)}
+          title={`${bottomPlayer.name}の${zoneNameJa('deck')}`}
+          onclick={(event) => openDeck(event, bottomPlayer)}
+        >
           {#each visibleDeckLayers(bottomPlayer.deckCount) as layer, layerIndex}
             <span class="deck-card-layer" style={`--deck-layer: ${layerIndex};`}></span>
           {/each}
@@ -131,14 +196,14 @@
             <span class="deck-card-face"></span>
           {/if}
           <span class="pile-count">{bottomPlayer.deckCount}</span>
-        </span>
+        </button>
         <button
           type="button"
           class="stack-pile discard-pile"
           class:projected-hover={projectedHoverPile === 'bottom-discard'}
-          title={`${bottomPlayer.name} discard`}
+          title={`${bottomPlayer.name}の${zoneNameJa('discard')}`}
           bind:this={bottomDiscardPileElement}
-          onclick={() => showDiscard(bottomPlayer)}
+          onclick={(event) => openDiscard(event, bottomPlayer)}
         >
           {#if bottomPlayer.discard.length}
             <CardTile card={bottomPlayer.discard[bottomPlayer.discard.length - 1]} compact />
@@ -272,7 +337,15 @@
     border-color: rgba(55, 150, 132, 0.85);
   }
 
-  button.stack-pile {
+  button.stack-pile,
+  button.prize-grid {
+    cursor: pointer;
+    pointer-events: auto;
+  }
+
+  button.stack-pile:disabled,
+  button.prize-grid:disabled {
+    cursor: default;
     pointer-events: none;
   }
 
@@ -403,7 +476,17 @@
     position: relative;
     width: calc(var(--prize-card-w) * 1.98);
     height: calc((var(--prize-card-w) * 1.397) + (var(--prize-card-w) * 1.42));
-    pointer-events: none;
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    pointer-events: auto;
+  }
+
+  .prize-grid:hover:not(:disabled) {
+    border-color: transparent;
   }
 
   :global(.debug-zones) .prize-grid {

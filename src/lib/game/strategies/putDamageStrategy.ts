@@ -15,6 +15,7 @@ import {
 type PutDamageStore = {
   damagePlacements: DamagePlacement[];
   placeDamage: (target: CardTarget, amount: number, requiredDamage: number, maxAllowedDamage: DamagePlacement[]) => void;
+  adjustDamage: (target: CardTarget, amount: number, requiredDamage: number, maxAllowedDamage: DamagePlacement[]) => void;
   resetDamagePlacements: () => void;
   damageForTarget: (target: CardTarget) => number;
   damageResult: () => unknown;
@@ -38,11 +39,21 @@ export function createPutDamageStrategy(args: {
     return totalPlacedDamage(store.damagePlacements);
   }
 
-  function canPlace(target: CardTarget) {
-    if (!includesTarget(targets, target) || placedTotal() + step > requiredDamage) {
+  function canPlaceAmount(target: CardTarget, amount: number) {
+    if (amount <= 0 || !includesTarget(targets, target) || placedTotal() + amount > requiredDamage) {
       return false;
     }
-    return store.damageForTarget(target) + step <= maxDamageForTarget(maxAllowedDamage, target);
+    return store.damageForTarget(target) + amount <= maxDamageForTarget(maxAllowedDamage, target);
+  }
+
+  function canAdjustDamage(target: CardTarget, amount: number) {
+    if (amount > 0) {
+      return canPlaceAmount(target, amount);
+    }
+    if (amount < 0) {
+      return includesTarget(targets, target) && store.damageForTarget(target) > 0;
+    }
+    return false;
   }
 
   function canConfirm() {
@@ -52,14 +63,21 @@ export function createPutDamageStrategy(args: {
 
   return {
     key: `put-damage:${prompt.id}`,
-    isEligible: canPlace,
+    isEligible: (target) => canPlaceAmount(target, step),
     isSelected: (target) => store.damageForTarget(target) > 0,
     deltaFor: (target) => store.damageForTarget(target),
     activate(target) {
-      if (canPlace(target)) {
+      if (canPlaceAmount(target, step)) {
         store.placeDamage(target, step, requiredDamage, maxAllowedDamage);
       }
     },
+    adjustDamage(target, amount) {
+      if (canAdjustDamage(target, amount)) {
+        store.adjustDamage(target, amount, requiredDamage, maxAllowedDamage);
+      }
+    },
+    canAdjustDamage,
+    quickAmounts: [10, 20, 30],
     reset: () => store.resetDamagePlacements(),
     confirm() {
       if (canConfirm()) {

@@ -46,7 +46,7 @@
     switchSides,
     switchDisabled = false,
     resetGame,
-    resetLabel = 'Change decks',
+    resetLabel = 'デッキ変更',
   }: Props = $props();
 </script>
 
@@ -60,33 +60,33 @@
   />
   <label>
     <input type="checkbox" bind:checked={followActive} />
-    Follow active player
+    手番を追従
   </label>
   <label>
     <input type="checkbox" bind:checked={autoConfirmPrompts} />
-    Auto-confirm reveals
+    公開確認を自動化
   </label>
   <label>
     <input type="checkbox" bind:checked={debugZones} />
-    Debug zones
+    ゾーン表示
   </label>
   <label>
     <input type="checkbox" bind:checked={showLogs} />
-    Show logs
+    ログ表示
   </label>
   <label>
-    Theme
-    <select bind:value={themePreference} aria-label="Theme preference">
-      <option value="system">System</option>
-      <option value="light">Light</option>
-      <option value="dark">Dark</option>
+    テーマ
+    <select bind:value={themePreference} aria-label="テーマ設定">
+      <option value="system">システム</option>
+      <option value="light">ライト</option>
+      <option value="dark">ダーク</option>
     </select>
   </label>
   <div class="sidebar-turn-actions">
-    <button disabled={busy || promptActive || gameFinished} onclick={passTurn}>Pass turn</button>
-    <button class="danger" disabled={busy || promptActive || gameFinished} onclick={concede}>Concede</button>
+    <button disabled={busy || promptActive || gameFinished} onclick={passTurn}>番を終える</button>
+    <button class="danger" disabled={busy || promptActive || gameFinished} onclick={concede}>投了</button>
   </div>
-  <button disabled={switchDisabled} onclick={switchSides}>Switch sides</button>
+  <button disabled={switchDisabled} onclick={switchSides}>上下を切替</button>
   <button onclick={resetGame}>{resetLabel}</button>
   {#if error}
     <span class="inline-error">{labelFor(error)}</span>
@@ -165,5 +165,48 @@
     background: var(--danger-bg);
     color: var(--danger-strong);
     font-size: 11px;
+  }
+
+  @media (max-width: 860px) {
+    .table-toolbar {
+      top: 8px;
+      right: 8px;
+      width: 44px;
+      max-height: 44px;
+      padding: 5px;
+      overflow: hidden;
+      transition: width var(--transition-fast), max-height var(--transition-fast);
+    }
+
+    .table-toolbar:hover,
+    .table-toolbar:focus-within {
+      width: min(210px, calc(100vw - 16px));
+      max-height: calc(100vh - 132px);
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+
+    .table-toolbar label,
+    .table-toolbar .sidebar-turn-actions,
+    .table-toolbar > button,
+    .table-toolbar .inline-error {
+      display: none;
+    }
+
+    .table-toolbar:hover label,
+    .table-toolbar:hover .sidebar-turn-actions,
+    .table-toolbar:hover > button,
+    .table-toolbar:hover .inline-error,
+    .table-toolbar:focus-within label,
+    .table-toolbar:focus-within .sidebar-turn-actions,
+    .table-toolbar:focus-within > button,
+    .table-toolbar:focus-within .inline-error {
+      display: flex;
+    }
+
+    .table-toolbar:hover .sidebar-turn-actions,
+    .table-toolbar:focus-within .sidebar-turn-actions {
+      display: grid;
+    }
   }
 </style>

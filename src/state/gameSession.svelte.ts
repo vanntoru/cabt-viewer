@@ -1,5 +1,6 @@
 import type { EngineResponse } from '../lib/game/types';
 import { gameStore } from './game.svelte';
+import { liveTimelineStore } from './liveTimeline.svelte';
 import { promptLifecycleStore } from './promptLifecycle.svelte';
 import { selectionStore } from './selection.svelte';
 
@@ -18,6 +19,7 @@ class GameSessionStore {
 
   reset() {
     gameStore.reset();
+    liveTimelineStore.reset();
     selectionStore.clearAll();
     promptLifecycleStore.reset();
   }
@@ -29,6 +31,9 @@ class GameSessionStore {
   }
 
   private afterCommand(response: EngineResponse) {
+    if (response.view) {
+      liveTimelineStore.capture(response.view);
+    }
     promptLifecycleStore.syncPromptScopedState(response.view?.prompts[0] ?? gameStore.game?.prompts[0]);
     promptLifecycleStore.resetCommandSelection(response.view?.prompts.length ?? gameStore.game?.prompts.length ?? 0);
   }

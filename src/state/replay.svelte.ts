@@ -2,6 +2,7 @@ import type { GameView } from '../lib/game/types';
 import type { ReplaySnapshot, ReplayStep } from '../lib/game/replay';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 import { loadGameLogs, type GameLogEntry } from '../lib/home/catalog';
+import { buildReplayQuestionPrompt } from '../lib/game/replayQuestionCopy';
 
 type AdjacentReplay = {
   id: string;
@@ -14,12 +15,15 @@ class ReplayStore {
   loading = $state(false);
   error = $state('');
   copiedForkPoint = $state(false);
+  copiedQuestionContext = $state(false);
+  questionContextText = $state('');
   currentReplayId = $state('');
   replayLogs = $state<GameLogEntry[]>([]);
   replayPlaylistId = $state('');
   replayPlaylist = $state<GameLogEntry[]>([]);
   private loadSequence = 0;
   private replayCache = new Map<string, Promise<ReplaySnapshot>>();
+  private nextTurnTargets = new Map<number, Array<number | null>>();
 
   get currentStep(): ReplayStep | null {
     return this.replay?.steps[this.stepIndex] ?? null;
@@ -51,6 +55,8 @@ class ReplayStore {
     this.loading = true;
     this.error = '';
     this.copiedForkPoint = false;
+    this.copiedQuestionContext = false;
+    this.questionContextText = '';
     const normalizedId = normalizeReplayId(id);
     this.currentReplayId = normalizedId;
     const playlistId = playlistIdFromLocation();
@@ -66,6 +72,7 @@ class ReplayStore {
       }
       this.replay = replay;
       this.stepIndex = 0;
+      this.nextTurnTargets = buildNextTurnTargets(replay);
       if (updateUrl) {
         updateReplayUrl(normalizedId || id);
       }
@@ -77,6 +84,7 @@ class ReplayStore {
       this.error = error instanceof Error ? error.message : String(error);
       this.replay = null;
       this.stepIndex = 0;
+      this.nextTurnTargets = new Map();
     } finally {
       if (loadId === this.loadSequence) {
         this.loading = false;
@@ -88,9 +96,12 @@ class ReplayStore {
     this.loadSequence += 1;
     this.replay = null;
     this.stepIndex = 0;
+    this.nextTurnTargets = new Map();
     this.loading = false;
     this.error = '';
     this.copiedForkPoint = false;
+    this.copiedQuestionContext = false;
+    this.questionContextText = '';
     this.currentReplayId = '';
     this.replayPlaylistId = '';
     this.replayPlaylist = [];
@@ -222,6 +233,8 @@ class ReplayStore {
   setStep(index: number): void {
     this.stepIndex = clampIndex(index, this.maxStepIndex);
     this.copiedForkPoint = false;
+    this.copiedQuestionContext = false;
+    this.questionContextText = '';
   }
 
   nextStep(): void {
@@ -243,15 +256,10 @@ class ReplayStore {
   nextPlayerTurnStepIndex(playerIndex: number): number | null {
     const replay = this.replay;
     const currentStep = this.currentStep;
-    if (!replay || !currentStep || currentStep.activePlayerIndex === playerIndex) {
+    if (!replay || !currentStep) {
       return null;
     }
-    for (let index = this.stepIndex + 1; index < replay.steps.length; index += 1) {
-      if (replay.steps[index].activePlayerIndex === playerIndex) {
-        return index;
-      }
-    }
-    return null;
+    return this.nextTurnTargets.get(playerIndex)?.[this.stepIndex] ?? null;
   }
 
   canSkipOpponentTurn(playerIndex: number): boolean {
@@ -303,6 +311,63 @@ class ReplayStore {
       turn: step.turn,
     }));
     this.copiedForkPoint = true;
+  }
+
+  async copyQuestionContext(): Promise<void> {
+    const replay = this.replay;
+    const step = this.currentStep;
+    const view = this.currentView;
+    if (!replay || !step || !view) {
+      return;
+    }
+
+    const text = buildReplayQuestionPrompt({
+      replay,
+      step,
+      view,
+      sourceId: this.currentReplayId,
+    });
+    this.questionContextText = '';
+    if (await writeClipboardText(text)) {
+      this.copiedQuestionContext = true;
+      return;
+    }
+    this.questionContextText = text;
+    this.copiedQuestionContext = false;
+  }
+
+  clearQuestionContextText(): void {
+    this.questionContextText = '';
+  }
+}
+
+async function writeClipboardText(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_error) {
+      // Fall through to the textarea-based copy path used on non-secure LAN/Tailscale origins.
+    }
+  }
+  if (typeof document === 'undefined') {
+    return false;
+  }
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.append(textarea);
+  textarea.focus();
+  textarea.select();
+  try {
+    return document.execCommand('copy');
+  } catch (_error) {
+    return false;
+  } finally {
+    textarea.remove();
   }
 }
 
@@ -427,6 +492,49 @@ function clampIndex(value: number, max: number): number {
     return 0;
   }
   return Math.min(max, Math.max(0, Math.round(value)));
+}
+
+function buildNextTurnTargets(replay: ReplaySnapshot): Map<number, Array<number | null>> {
+  const playerIndexes = new Set<number>();
+  for (const player of replay.players) {
+    playerIndexes.add(player.userId);
+  }
+  for (const step of replay.steps) {
+    playerIndexes.add(step.activePlayerIndex);
+  }
+
+  const targets = new Map<number, Array<number | null>>();
+  for (const playerIndex of playerIndexes) {
+    const playerTargets = new Array<number | null>(replay.steps.length).fill(null);
+    let nextOwnedStep: number | null = null;
+    let nextOwnedStepAfterOpponent: number | null = null;
+    for (let index = replay.steps.length - 1; index >= 0; index -= 1) {
+      const ownerIndex = stepOwnerIndex(replay.steps[index]);
+      if (ownerIndex === playerIndex) {
+        playerTargets[index] = nextOwnedStepAfterOpponent;
+        nextOwnedStep = index;
+      } else {
+        playerTargets[index] = nextOwnedStep;
+        if (nextOwnedStep !== null) {
+          nextOwnedStepAfterOpponent = nextOwnedStep;
+        }
+      }
+      if (playerTargets[index] === null && index < replay.steps.length - 1) {
+        playerTargets[index] = replay.steps.length - 1;
+      }
+    }
+    targets.set(playerIndex, playerTargets);
+  }
+
+  return targets;
+}
+
+function stepOwnerIndex(step: ReplayStep): number {
+  const match = /^プレイヤー(\d+):/.exec(step.label);
+  if (match) {
+    return Number(match[1]) - 1;
+  }
+  return step.activePlayerIndex;
 }
 
 export const replayStore = new ReplayStore();

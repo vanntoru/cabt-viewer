@@ -25,6 +25,9 @@ export type BoardInteractionStrategy = {
   isSelected: (target: CardTarget) => boolean;
   deltaFor: (target: CardTarget) => number;
   activate: (target: CardTarget) => void;
+  adjustDamage?: (target: CardTarget, amount: number) => void;
+  canAdjustDamage?: (target: CardTarget, amount: number) => boolean;
+  quickAmounts?: number[];
   reset: () => void;
   confirm: () => void;
   cancel?: () => void;

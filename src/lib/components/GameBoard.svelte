@@ -2,9 +2,11 @@
   import ActiveDuel from './ActiveDuel.svelte';
   import BenchZone from './BenchZone.svelte';
   import CenterPiles from './CenterPiles.svelte';
+  import { zoneNameJa } from '../game/jaText';
   import type { CardView, PlayerView, PokemonSlotView } from '../game/types';
+  import { cardPreviewStore } from '../../state/cardPreview.svelte';
 
-  type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
+  type ZoneName = 'deck' | 'discard' | 'lostZone' | 'prize' | 'stadium' | 'playZone';
 
   type Props = {
     topPlayer: PlayerView;
@@ -25,6 +27,9 @@
     isBoardPromptSelectable: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelected: (slot: PokemonSlotView) => boolean;
     boardSlotDelta: (slot: PokemonSlotView) => number;
+    damageQuickAmounts?: (slot: PokemonSlotView) => number[];
+    canAdjustSlotDamage?: (slot: PokemonSlotView, amount: number) => boolean;
+    adjustSlotDamage?: (slot: PokemonSlotView, amount: number) => void;
     clickSlot: (slot: PokemonSlotView) => void;
     allowDrop: (event: DragEvent, slot: PokemonSlotView) => void;
     dropToSlot: (slot: PokemonSlotView, event: DragEvent) => void;
@@ -39,6 +44,7 @@
     boardPerspective?: number;
     boardScaleY?: number;
     boardLift?: number;
+    onProjectedPileHoverChange?: (pileKey: string) => void;
   };
 
   let {
@@ -60,6 +66,9 @@
     isBoardPromptSelectable,
     isBoardPromptSelected,
     boardSlotDelta,
+    damageQuickAmounts = () => [],
+    canAdjustSlotDamage = () => false,
+    adjustSlotDamage = () => {},
     clickSlot,
     allowDrop,
     dropToSlot,
@@ -74,6 +83,7 @@
     boardPerspective = 1250,
     boardScaleY = 98,
     boardLift = 0,
+    onProjectedPileHoverChange,
   }: Props = $props();
 
   let topLostPileElement = $state<HTMLButtonElement>();
@@ -86,10 +96,10 @@
 
   function projectedPiles(): Array<[ProjectedPileKey, HTMLButtonElement | undefined, () => void]> {
     return [
-      ['top-lost', topLostPileElement, () => showZone(topPlayer.index, 'lostZone', `${topPlayer.name} lost zone`)],
-      ['top-discard', topDiscardPileElement, () => showZone(topPlayer.index, 'discard', `${topPlayer.name} discard`)],
-      ['bottom-lost', bottomLostPileElement, () => showZone(bottomPlayer.index, 'lostZone', `${bottomPlayer.name} lost zone`)],
-      ['bottom-discard', bottomDiscardPileElement, () => showZone(bottomPlayer.index, 'discard', `${bottomPlayer.name} discard`)],
+      ['top-lost', topLostPileElement, () => showZone(topPlayer.index, 'lostZone', `${topPlayer.name}の${zoneNameJa('lostZone')}`)],
+      ['top-discard', topDiscardPileElement, () => showZone(topPlayer.index, 'discard', `${topPlayer.name}の${zoneNameJa('discard')}`)],
+      ['bottom-lost', bottomLostPileElement, () => showZone(bottomPlayer.index, 'lostZone', `${bottomPlayer.name}の${zoneNameJa('lostZone')}`)],
+      ['bottom-discard', bottomDiscardPileElement, () => showZone(bottomPlayer.index, 'discard', `${bottomPlayer.name}の${zoneNameJa('discard')}`)],
     ];
   }
 
@@ -117,9 +127,111 @@
     return true;
   }
 
-  function updateProjectedPileHover(event: MouseEvent) {
-    projectedHoverPile = projectedPiles().find(([, element]) => containsPoint(element, event))?.[0] ?? '';
+  function clickProjectedStadium(event: MouseEvent) {
+    if (!currentStadium || !currentStadiumOwner) {
+      return false;
+    }
+    const board = event.currentTarget;
+    if (!(board instanceof HTMLElement)) {
+      return false;
+    }
+    const stadiumElement = Array.from(board.querySelectorAll<HTMLElement>('.stadium-card'))
+      .find((element) => containsPoint(element, event));
+    if (!stadiumElement) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    showZone(currentStadiumOwner.index, 'stadium', `${currentStadiumOwner.name}の${zoneNameJa('stadium')}`);
+    return true;
   }
+
+  function isInteractiveBoardTarget(target: EventTarget | null) {
+    return (
+      target instanceof Element &&
+      target.closest('button, a, input, textarea, select, .board-slot, .card-tile, .bench-drop-surface, .stack-pile, .stadium-card')
+    );
+  }
+
+  function slotForElement(element: HTMLElement) {
+    const ownerIndex = Number(element.dataset.ownerIndex);
+    const slotKind = element.dataset.slotKind;
+    const slotIndex = Number(element.dataset.slotIndex);
+    if (!Number.isFinite(ownerIndex) || (slotKind !== 'active' && slotKind !== 'bench') || !Number.isFinite(slotIndex)) {
+      return undefined;
+    }
+    if (ownerIndex === topPlayer.index) {
+      return slotKind === 'active' ? topActiveSlot : topBenchSlots.find((slot) => slot.index === slotIndex);
+    }
+    if (ownerIndex === bottomPlayer.index) {
+      return slotKind === 'active' ? bottomActiveSlot : bottomBenchSlots.find((slot) => slot.index === slotIndex);
+    }
+    return undefined;
+  }
+
+  function distanceFromElementCenter(element: HTMLElement, event: MouseEvent) {
+    const rect = element.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return Math.hypot(event.clientX - centerX, event.clientY - centerY);
+  }
+
+  function suppressTouchLandscapePreview() {
+    return typeof window !== 'undefined'
+      && window.matchMedia('(pointer: coarse) and (orientation: landscape)').matches;
+  }
+
+  function clickProjectedSlot(event: MouseEvent) {
+    if (isInteractiveBoardTarget(event.target)) {
+      return false;
+    }
+    const board = event.currentTarget;
+    if (!(board instanceof HTMLElement)) {
+      return false;
+    }
+    const slotElement = Array.from(
+      board.querySelectorAll<HTMLElement>('.board-slot[data-owner-index][data-slot-kind][data-slot-index]')
+    )
+      .filter((element) => containsPoint(element, event))
+      .sort((a, b) => distanceFromElementCenter(a, event) - distanceFromElementCenter(b, event))[0];
+    const slot = slotElement ? slotForElement(slotElement) : undefined;
+    if (!slot || slot.empty) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (slot.pokemon) {
+      if (suppressTouchLandscapePreview()) {
+        return true;
+      }
+      cardPreviewStore.show(slot.pokemon);
+      return true;
+    }
+    clickSlot(slot);
+    return true;
+  }
+
+  function setProjectedPileHover(pileKey: string) {
+    if (projectedHoverPile === pileKey) {
+      return;
+    }
+    projectedHoverPile = pileKey;
+    onProjectedPileHoverChange?.(pileKey);
+  }
+
+  function updateProjectedPileHover(event: MouseEvent) {
+    setProjectedPileHover(projectedPiles().find(([, element]) => containsPoint(element, event))?.[0] ?? '');
+  }
+
+  $effect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    window.addEventListener('mousemove', updateProjectedPileHover, { passive: true });
+    return () => {
+      window.removeEventListener('mousemove', updateProjectedPileHover);
+    };
+  });
 
   let boardPerspectiveStyle = $derived([
     `--board-tilt: ${boardTilt}deg`,
@@ -132,24 +244,35 @@
     if (clickProjectedPile(event)) {
       return;
     }
+    if (clickProjectedStadium(event)) {
+      return;
+    }
+    if (clickProjectedSlot(event)) {
+      return;
+    }
     if (!canPlayOnBoard) {
       return;
     }
-    if (
-      event.target instanceof Element &&
-      event.target.closest('button, a, input, textarea, select, .board-slot, .card-tile, .bench-drop-surface, .stack-pile, .stadium-card')
-    ) {
+    if (isInteractiveBoardTarget(event.target)) {
       return;
     }
     clickBoardPlay(event);
   }
 
   function showLostZone(player: PlayerView) {
-    showZone(player.index, 'lostZone', `${player.name} lost zone`);
+    showZone(player.index, 'lostZone', `${player.name}の${zoneNameJa('lostZone')}`);
   }
 
   function showDiscard(player: PlayerView) {
-    showZone(player.index, 'discard', `${player.name} discard`);
+    showZone(player.index, 'discard', `${player.name}の${zoneNameJa('discard')}`);
+  }
+
+  function showDeck(player: PlayerView) {
+    showZone(player.index, 'deck', `${player.name}の${zoneNameJa('deck')}`);
+  }
+
+  function showPrize(player: PlayerView) {
+    showZone(player.index, 'prize', `${player.name}の${zoneNameJa('prize')}`);
   }
 </script>
 
@@ -161,7 +284,7 @@
   role="presentation"
   onclick={clickBoardSurface}
   onmousemove={updateProjectedPileHover}
-  onmouseleave={() => (projectedHoverPile = '')}
+  onmouseleave={() => setProjectedPileHover('')}
   ondragover={allowBoardPlayDrop}
   ondrop={dropToBoardPlay}
 >
@@ -188,6 +311,9 @@
       {isBoardPromptSelectable}
       {isBoardPromptSelected}
       {boardSlotDelta}
+      {damageQuickAmounts}
+      {canAdjustSlotDamage}
+      {adjustSlotDamage}
       {clickSlot}
       {allowDrop}
       {dropToSlot}
@@ -204,6 +330,8 @@
       bind:bottomDiscardPileElement
       {showLostZone}
       {showDiscard}
+      {showDeck}
+      {showPrize}
     />
 
     <ActiveDuel
@@ -217,6 +345,9 @@
       {isBoardPromptSelectable}
       {isBoardPromptSelected}
       {boardSlotDelta}
+      {damageQuickAmounts}
+      {canAdjustSlotDamage}
+      {adjustSlotDamage}
       {clickSlot}
       {allowDrop}
       {dropToSlot}
@@ -240,6 +371,9 @@
       {isBoardPromptSelectable}
       {isBoardPromptSelected}
       {boardSlotDelta}
+      {damageQuickAmounts}
+      {canAdjustSlotDamage}
+      {adjustSlotDamage}
       {clickSlot}
       {allowDrop}
       {dropToSlot}
@@ -269,6 +403,7 @@
     perspective: var(--board-perspective, 1250px);
     perspective-origin: 50% 68%;
     transform-style: preserve-3d;
+    pointer-events: none;
   }
 
   .playmat.has-projected-pile-hover {
@@ -307,6 +442,7 @@
     transform-origin: 50% 58%;
     transform-style: preserve-3d;
     will-change: transform;
+    pointer-events: auto;
   }
 
   :global(.debug-zones) .game-board-plane {
@@ -355,6 +491,26 @@
   @media (max-width: 980px) {
     .game-board-plane {
       padding-inline: 12px;
+    }
+  }
+
+  @media (max-width: 860px) {
+    .playmat {
+      perspective: none;
+    }
+
+    .game-board-plane {
+      gap: calc(var(--board-row-gap) * 0.72);
+      padding: 8px 18px;
+      transform: none;
+    }
+
+    .game-board-plane::before {
+      border-radius: 12px;
+    }
+
+    .game-board-plane::after {
+      width: clamp(140px, 42vw, 210px);
     }
   }
 </style>

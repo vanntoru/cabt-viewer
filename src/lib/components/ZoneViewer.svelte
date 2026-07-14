@@ -28,24 +28,24 @@
 </script>
 
 {#if open}
-  <button type="button" class="zone-viewer-backdrop" aria-label="Close zone viewer" onclick={close}></button>
+  <button type="button" class="zone-viewer-backdrop" aria-label="ゾーン表示を閉じる" onclick={close}></button>
   <section class="zone-viewer" aria-label={title}>
     <div class="zone-viewer-header" class:has-action={!!actionLabel}>
       <strong>{title}</strong>
-      <span>{cards.length} card{cards.length === 1 ? '' : 's'}</span>
+      <span>{cards.length}枚</span>
       {#if actionLabel}
         <button type="button" disabled={actionDisabled} title={actionTitle} onclick={onAction}>{actionLabel}</button>
       {/if}
-      <button type="button" onclick={close}>Close</button>
+      <button type="button" onclick={close}>閉じる</button>
     </div>
     {#if cards.length}
       <div class="zone-card-grid">
         {#each cards as card, index}
-          <CardTile {card} compact faceDown={faceDown} testId={`zone-card-${index}`} />
+          <CardTile {card} compact faceDown={faceDown} previewable={!faceDown} testId={`zone-card-${index}`} />
         {/each}
       </div>
     {:else}
-      <p class="zone-empty">Empty</p>
+      <p class="zone-empty">空です</p>
     {/if}
   </section>
 {/if}
@@ -53,7 +53,7 @@
 <style>
   .zone-viewer {
     position: absolute;
-    z-index: 10;
+    z-index: 20;
     left: calc((100vw - var(--board-right-rail)) / 2);
     top: calc((var(--board-top-inset) + 100vh - var(--board-bottom-inset)) / 2);
     width: min(1120px, calc(100vw - 220px));
@@ -75,7 +75,7 @@
   .zone-viewer-backdrop {
     position: absolute;
     inset: 0;
-    z-index: 9;
+    z-index: 19;
     padding: 0;
     border: 0;
     border-radius: 0;

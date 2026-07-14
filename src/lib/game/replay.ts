@@ -5,6 +5,21 @@ export type ReplayPlayerInfo = {
   name: string;
 };
 
+export type ReplayDeckReference = {
+  focusDeck?: string;
+  deckId?: string;
+  deckSourcePath?: string;
+  deckCsvPath?: string;
+  replayCollectionId?: string;
+  sourceZipName?: string;
+  sourceZipPath?: string;
+  deckCsvMember?: string;
+  deckJsonMember?: string;
+  deckHash?: string;
+  zipSha256?: string;
+  candidateSource?: string;
+};
+
 export type ReplayStep = {
   index: number;
   label: string;
@@ -14,6 +29,7 @@ export type ReplayStep = {
   turn: number;
   phase: number;
   activePlayerIndex: number;
+  liveHistoryLength?: number;
   type: string;
   payload: unknown;
 };
@@ -24,6 +40,10 @@ export type ReplaySnapshot = {
   created: number;
   players: ReplayPlayerInfo[];
   winner: number;
+  preferredPlayerIndex?: number;
+  candidateSlug?: string;
+  workbenchFocusDeck?: string;
+  deckReference?: ReplayDeckReference;
   stateCount: number;
   actionCount: number;
   turnCount: number;

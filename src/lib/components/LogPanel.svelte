@@ -10,7 +10,7 @@
 </script>
 
 <aside class="log-panel">
-  <h2>Log</h2>
+  <h2>ログ</h2>
   {#each visibleLogs as log}
     <p>{labelFor(log.message)}</p>
   {/each}

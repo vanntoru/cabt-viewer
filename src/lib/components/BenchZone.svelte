@@ -18,6 +18,9 @@
     isBoardPromptSelectable: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelected: (slot: PokemonSlotView) => boolean;
     boardSlotDelta: (slot: PokemonSlotView) => number;
+    damageQuickAmounts: (slot: PokemonSlotView) => number[];
+    canAdjustSlotDamage: (slot: PokemonSlotView, amount: number) => boolean;
+    adjustSlotDamage: (slot: PokemonSlotView, amount: number) => void;
     clickSlot: (slot: PokemonSlotView) => void;
     allowDrop: (event: DragEvent, slot: PokemonSlotView) => void;
     dropToSlot: (slot: PokemonSlotView, event: DragEvent) => void;
@@ -39,6 +42,9 @@
     isBoardPromptSelectable,
     isBoardPromptSelected,
     boardSlotDelta,
+    damageQuickAmounts,
+    canAdjustSlotDamage,
+    adjustSlotDamage,
     clickSlot,
     allowDrop,
     dropToSlot,
@@ -78,6 +84,9 @@
         promptSelectable={isBoardPromptSelectable(slot)}
         promptSelected={isBoardPromptSelected(slot)}
         slotDelta={boardSlotDelta(slot)}
+        damageQuickAmounts={damageQuickAmounts(slot)}
+        canAdjustDamage={(amount) => canAdjustSlotDamage(slot, amount)}
+        adjustDamage={(amount) => adjustSlotDamage(slot, amount)}
         onclick={() => clickSlot(slot)}
         ondragover={(event) => allowDrop(event, slot)}
         ondrop={(event) => dropToSlot(slot, event)}
@@ -166,7 +175,7 @@
     pointer-events: none;
   }
 
-  .bench-row :global(.board-slot) {
+  .bench-row :global(.board-slot-frame) {
     --slot-card-w: var(--bench-card-w);
     width: var(--bench-card-w);
     pointer-events: auto;

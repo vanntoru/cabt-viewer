@@ -3,6 +3,7 @@ import { cabtObservationToGameView } from './demoEngine';
 import type { CabtDataMaps } from './demoEngine';
 import { CabtAreaType, CabtCardType, CabtOptionType, CabtSelectContext, CabtSelectType } from './types';
 import type { CabtObservation } from './types';
+import { SlotType, targetFor } from '../game/types';
 
 describe('cabtObservationToGameView', () => {
   it('surfaces the global CABT stadium on the owning player view', () => {
@@ -556,6 +557,76 @@ describe('cabtObservationToGameView', () => {
       { index: 3, cards: [] },
       { index: 4, cards: [] },
       { index: 5, cards: [] },
+    ]);
+  });
+
+  it('routes repeated damage counter target selection through the board damage prompt', () => {
+    const dataMaps: CabtDataMaps = {
+      cardData: {
+        121: { cardId: 121, name: 'Dragapult ex', cardType: CabtCardType.POKEMON, stage2: true, hp: 320 },
+        305: { cardId: 305, name: 'Dunsparce', cardType: CabtCardType.POKEMON, basic: true, hp: 70 },
+        646: { cardId: 646, name: "Marnie's Impidimp", cardType: CabtCardType.POKEMON, basic: true, hp: 70 },
+      },
+      attacks: {},
+    };
+    const observation = {
+      select: {
+        type: CabtSelectType.CARD,
+        context: CabtSelectContext.DAMAGE_COUNTER_ANY,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 6,
+        remainEnergyCost: 0,
+        option: [
+          { type: CabtOptionType.CARD, area: CabtAreaType.BENCH, index: 0, playerIndex: 1 },
+          { type: CabtOptionType.CARD, area: CabtAreaType.BENCH, index: 1, playerIndex: 1 },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+      logs: [],
+      current: {
+        turn: 4,
+        turnActionCount: 2,
+        yourIndex: 0,
+        firstPlayer: 0,
+        supporterPlayed: false,
+        stadiumPlayed: false,
+        energyAttached: true,
+        retreated: false,
+        result: -1,
+        stadium: [],
+        looking: null,
+        players: [
+          {
+            ...player(),
+            active: [{ id: 121, hp: 320, maxHp: 320, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] }],
+          },
+          {
+            ...player(),
+            bench: [
+              { id: 305, hp: 70, maxHp: 70, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] },
+              { id: 646, hp: 40, maxHp: 70, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] },
+            ],
+          },
+        ],
+      },
+    } satisfies CabtObservation;
+
+    const view = cabtObservationToGameView(observation, [], dataMaps);
+    const prompt = view.prompts[0];
+
+    expect(prompt?.className).toBe('PutDamagePrompt');
+    expect(prompt?.fields.damage).toBe(60);
+    expect(prompt?.fields.options).toEqual({ min: 60, max: 60, damageMultiple: 10 });
+    expect(prompt?.fields.targets).toEqual([
+      targetFor(0, 1, SlotType.BENCH, 0),
+      targetFor(0, 1, SlotType.BENCH, 1),
+    ]);
+    expect(prompt?.fields.maxAllowedDamage).toEqual([
+      { target: targetFor(0, 1, SlotType.BENCH, 0), damage: 60 },
+      { target: targetFor(0, 1, SlotType.BENCH, 1), damage: 60 },
     ]);
   });
 });

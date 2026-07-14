@@ -130,6 +130,36 @@ describe('LocalEngineController', () => {
     expect(engine.findPendingRetreatTargetOption()).toBe(1);
   });
 
+  it('rejects invalid manual option selections before calling the CABT bridge', async () => {
+    const engine = new LocalEngineController() as any;
+    engine.sessionId = 'test-session';
+    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.observation = {
+      logs: [],
+      current: null,
+      select: {
+        type: 1,
+        context: CabtSelectContext.TO_ACTIVE,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [{ type: CabtOptionType.CARD }],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+    };
+    engine.bridge = {
+      request: async () => {
+        throw new Error('bridge should not be called');
+      },
+    };
+
+    await expect(engine.applySelection([1])).rejects.toThrow('out-of-range option indexes');
+    await expect(engine.applySelection([0, 0])).rejects.toThrow('Selection must contain 1-1 option');
+  });
+
   it('batches repeated single-energy retreat payment prompts', async () => {
     const engine = new LocalEngineController() as any;
     const selections: number[][] = [];
@@ -251,5 +281,103 @@ describe('LocalEngineController', () => {
     await engine.applySelection([0, 1, 2, 3]);
 
     expect(selections).toEqual([[0], [0], [0], [0], [0]]);
+  });
+
+  it('expands board damage placements into repeated CABT damage counter selections', async () => {
+    const engine = new LocalEngineController() as any;
+    const selections: number[][] = [];
+    let remainingCounters = 6;
+    const current = {
+      turn: 3,
+      turnActionCount: 2,
+      yourIndex: 0,
+      firstPlayer: 0,
+      supporterPlayed: false,
+      stadiumPlayed: false,
+      energyAttached: true,
+      retreated: false,
+      result: -1,
+      stadium: [],
+      looking: null,
+      players: [
+        {
+          active: [null],
+          bench: [],
+          benchMax: 5,
+          deckCount: 47,
+          discard: [],
+          prize: [],
+          handCount: 0,
+          hand: [],
+          poisoned: false,
+          burned: false,
+          asleep: false,
+          paralyzed: false,
+          confused: false,
+        },
+        {
+          active: [null],
+          bench: [
+            { id: 305, hp: 70, maxHp: 70, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] },
+            { id: 646, hp: 70, maxHp: 70, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] },
+          ],
+          benchMax: 5,
+          deckCount: 47,
+          discard: [],
+          prize: [],
+          handCount: 0,
+          hand: [],
+          poisoned: false,
+          burned: false,
+          asleep: false,
+          paralyzed: false,
+          confused: false,
+        },
+      ],
+    };
+    const damageSelect = () => ({
+      type: 1,
+      context: CabtSelectContext.DAMAGE_COUNTER_ANY,
+      minCount: 1,
+      maxCount: 1,
+      remainDamageCounter: remainingCounters,
+      remainEnergyCost: 0,
+      option: [
+        { type: CabtOptionType.CARD, area: CabtAreaType.BENCH, index: 0, playerIndex: 1 },
+        { type: CabtOptionType.CARD, area: CabtAreaType.BENCH, index: 1, playerIndex: 1 },
+      ],
+      deck: null,
+      contextCard: null,
+      effect: null,
+    });
+
+    engine.sessionId = 'test-session';
+    engine.dataMaps = { cardData: {}, attacks: {} };
+    engine.observation = {
+      select: damageSelect(),
+      logs: [],
+      current,
+    };
+    engine.bridge = {
+      request: async ({ selection }: { selection: number[] }) => {
+        selections.push(selection);
+        remainingCounters -= 1;
+        return {
+          ok: true,
+          observation: {
+            select: remainingCounters > 0 ? damageSelect() : null,
+            logs: [],
+            current,
+          },
+        };
+      },
+    };
+
+    await engine.applyDamagePlacementSelections([
+      { target: targetFor(0, 1, SlotType.BENCH, 0), damage: 30 },
+      { target: targetFor(0, 1, SlotType.BENCH, 1), damage: 30 },
+    ]);
+
+    expect(selections).toEqual([[0], [0], [0], [1], [1], [1]]);
   });
 });

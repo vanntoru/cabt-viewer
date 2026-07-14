@@ -3,7 +3,7 @@
   import StadiumCard from './StadiumCard.svelte';
   import type { CardView, PlayerView, PokemonSlotView } from '../game/types';
 
-  type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
+  type ZoneName = 'deck' | 'discard' | 'lostZone' | 'prize' | 'stadium' | 'playZone';
 
   type Props = {
     topPlayer: PlayerView;
@@ -16,6 +16,9 @@
     isBoardPromptSelectable: (slot: PokemonSlotView) => boolean;
     isBoardPromptSelected: (slot: PokemonSlotView) => boolean;
     boardSlotDelta: (slot: PokemonSlotView) => number;
+    damageQuickAmounts: (slot: PokemonSlotView) => number[];
+    canAdjustSlotDamage: (slot: PokemonSlotView, amount: number) => boolean;
+    adjustSlotDamage: (slot: PokemonSlotView, amount: number) => void;
     clickSlot: (slot: PokemonSlotView) => void;
     allowDrop: (event: DragEvent, slot: PokemonSlotView) => void;
     dropToSlot: (slot: PokemonSlotView, event: DragEvent) => void;
@@ -35,6 +38,9 @@
     isBoardPromptSelectable,
     isBoardPromptSelected,
     boardSlotDelta,
+    damageQuickAmounts,
+    canAdjustSlotDamage,
+    adjustSlotDamage,
     clickSlot,
     allowDrop,
     dropToSlot,
@@ -61,6 +67,9 @@
     promptSelectable={isBoardPromptSelectable(topPlayer.active)}
     promptSelected={isBoardPromptSelected(topPlayer.active)}
     slotDelta={boardSlotDelta(topPlayer.active)}
+    damageQuickAmounts={damageQuickAmounts(topPlayer.active)}
+    canAdjustDamage={(amount) => canAdjustSlotDamage(topPlayer.active, amount)}
+    adjustDamage={(amount) => adjustSlotDamage(topPlayer.active, amount)}
     onclick={() => clickActive(topPlayer.active)}
     ondragover={(event) => allowDrop(event, topPlayer.active)}
     ondrop={(event) => dropToSlot(topPlayer.active, event)}
@@ -78,6 +87,9 @@
     promptSelectable={isBoardPromptSelectable(bottomPlayer.active)}
     promptSelected={isBoardPromptSelected(bottomPlayer.active)}
     slotDelta={boardSlotDelta(bottomPlayer.active)}
+    damageQuickAmounts={damageQuickAmounts(bottomPlayer.active)}
+    canAdjustDamage={(amount) => canAdjustSlotDamage(bottomPlayer.active, amount)}
+    adjustDamage={(amount) => adjustSlotDamage(bottomPlayer.active, amount)}
     onclick={() => clickActive(bottomPlayer.active)}
     ondragover={(event) => allowDrop(event, bottomPlayer.active)}
     ondrop={(event) => dropToSlot(bottomPlayer.active, event)}
@@ -113,7 +125,7 @@
     background: rgba(245, 158, 11, 0.06);
   }
 
-  .active-duel > :global(.board-slot.active:not(.empty):not(.can-drop):not(.prompt-selectable):not(.prompt-selected)) {
+  .active-duel > :global(.board-slot-frame.active) :global(.board-slot:not(.empty):not(.can-drop):not(.prompt-selectable):not(.prompt-selected)) {
     box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.7), 0 12px 26px rgba(23, 30, 38, 0.22);
   }
 

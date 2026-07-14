@@ -33,6 +33,7 @@ type BridgeResponse = {
   observation?: CabtObservation;
   cards?: CabtCardData[];
   attacks?: CabtAttack[];
+  historyLength?: number;
 };
 
 type PendingBridgeCall = {
@@ -68,7 +69,7 @@ for (const row of CARD_ROWS) {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FRONTEND_ROOT = path.resolve(__dirname, '..', '..');
-const WORKSPACE_ROOT = path.resolve(FRONTEND_ROOT, '..');
+const WORKSPACE_ROOT = path.resolve(FRONTEND_ROOT, '..', '..');
 const BRIDGE_PATH = path.join(FRONTEND_ROOT, 'src', 'engine', 'cabt_bridge.py');
 
 export class LocalEngineController {
@@ -79,6 +80,8 @@ export class LocalEngineController {
   private logs: LogView[] = [];
   private logId = 1;
   private sessionId = '';
+  private bridgeHistoryLength = 0;
+  private visibleHistoryMarks: number[] = [];
   private pendingRetreatTarget: PendingRetreatTarget | null = null;
 
   constructor() {
@@ -97,6 +100,8 @@ export class LocalEngineController {
       switch (command.type) {
         case 'startGame':
           return await this.start(command.payload);
+        case 'rewindTo':
+          return await this.rewindTo(command.payload);
         case 'state':
           return this.viewResponse();
         case 'playCard':
@@ -108,12 +113,15 @@ export class LocalEngineController {
         case 'useStadium':
           return await this.selectMatchingOption((option) => option.area === CabtAreaType.STADIUM);
         case 'concede':
-          return { ok: false, error: 'Concede is not exposed by the CABT native engine.', view: this.view() };
+          return this.concede(command.payload);
         case 'retreat':
           return await this.retreat(command.payload);
         case 'passTurn':
           return await this.selectMatchingOption((option) => option.type === CabtOptionType.END);
         case 'resolvePrompt':
+          if (this.isDamagePlacementResult(command.payload?.result)) {
+            return await this.applyDamagePlacementSelections(command.payload.result);
+          }
           return await this.applySelection(this.normalizePromptSelection(command.payload?.result));
         default:
           return { ok: false, error: `Unsupported command: ${command.type}`, view: this.view() };
@@ -153,6 +161,8 @@ export class LocalEngineController {
     const agentPath = agentPathForId(payload?.player2?.agentId);
     this.bridge.stop();
     this.sessionId = createSessionId();
+    this.bridgeHistoryLength = 0;
+    this.visibleHistoryMarks = [];
     this.pendingRetreatTarget = null;
     const response = await this.bridge.request({
       command: 'start',
@@ -162,6 +172,34 @@ export class LocalEngineController {
     }, { allowStart: true });
     this.applyBridgeResponse(response);
     this.logs = [{ id: this.logId++, message: `Started real CABT match${agentPath ? ` against ${agentPath}` : ''}.` }];
+    this.rememberVisibleHistoryMark();
+    return this.viewResponse();
+  }
+
+  private async rewindTo(payload: any): Promise<EngineResponse> {
+    const stepIndex = Number(payload?.stepIndex);
+    const payloadHistoryLength = Number(payload?.historyLength);
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) {
+      throw new Error(`Cannot replay from step ${payload?.stepIndex}.`);
+    }
+    const historyLength = Number.isInteger(payloadHistoryLength)
+      ? payloadHistoryLength
+      : this.visibleHistoryMarks[stepIndex];
+    if (!Number.isInteger(historyLength)) {
+      throw new Error(`Cannot replay from step ${payload?.stepIndex}.`);
+    }
+    const response = await this.bridge.request({
+      command: 'rewind',
+      historyLength,
+    });
+    this.applyBridgeResponse(response);
+    this.visibleHistoryMarks = this.visibleHistoryMarks.slice(0, stepIndex + 1);
+    this.visibleHistoryMarks[stepIndex] = this.bridgeHistoryLength;
+    this.pendingRetreatTarget = null;
+    this.logs = [
+      ...this.logs,
+      { id: this.logId++, message: `Replayed from step ${stepIndex}.` },
+    ];
     return this.viewResponse();
   }
 
@@ -176,6 +214,23 @@ export class LocalEngineController {
       this.pendingRetreatTarget = null;
     }
     return response;
+  }
+
+  private concede(payload: any): EngineResponse {
+    const playerIndex = typeof payload?.playerIndex === 'number' ? payload.playerIndex : (this.observation?.current?.yourIndex ?? 0);
+    const observation = this.observation;
+    const current = observation?.current;
+    if (!observation || !current) {
+      throw new Error('No active CABT battle.');
+    }
+    const winner = playerIndex === 0 ? 1 : 0;
+    current.result = winner;
+    observation.current = current;
+    observation.select = null;
+    this.pendingRetreatTarget = null;
+    this.logs = [...this.logs, { id: this.logId++, message: `Player ${playerIndex + 1} conceded.` }];
+    this.rememberVisibleHistoryMark();
+    return this.viewResponse();
   }
 
   private async selectMatchingOption(predicate: (option: CabtOption) => boolean): Promise<EngineResponse> {
@@ -198,16 +253,34 @@ export class LocalEngineController {
     if (this.canBatchRepeatedSingleSelection(select, selection)) {
       return this.applyRepeatedSingleSelections(selection);
     }
-    if (selection.length < select.minCount || selection.length > select.maxCount) {
-      throw new Error(`Selection must contain ${select.minCount}-${select.maxCount} option(s).`);
-    }
+    this.validateSelection(select, selection);
     const response = await this.bridge.request({
       command: 'select',
       selection,
     });
     this.applyBridgeResponse(response);
     await this.applyPendingRetreatTarget();
+    this.rememberVisibleHistoryMark();
     return this.viewResponse();
+  }
+
+  private validateSelection(select: CabtSelectData, selection: number[]): void {
+    if (!Array.isArray(selection) || !selection.every((index) => Number.isInteger(index))) {
+      throw new Error('Selection must be an array of option indexes.');
+    }
+    if (selection.length < select.minCount || selection.length > select.maxCount) {
+      throw new Error(`Selection must contain ${select.minCount}-${select.maxCount} option(s).`);
+    }
+    const duplicates = selection.filter((index, position) => selection.indexOf(index) !== position);
+    if (duplicates.length) {
+      throw new Error(`Selection contains duplicate option indexes: ${[...new Set(duplicates)].join(', ')}.`);
+    }
+    const outOfRange = selection.filter((index) => index < 0 || index >= select.option.length);
+    if (outOfRange.length) {
+      throw new Error(
+        `Selection contains out-of-range option indexes: ${outOfRange.join(', ')}; option_count=${select.option.length}.`,
+      );
+    }
   }
 
   private canBatchRepeatedSingleSelection(select: CabtSelectData, selection: number[]): boolean {
@@ -232,6 +305,7 @@ export class LocalEngineController {
       if (optionIndex < 0) {
         break;
       }
+      this.validateSelection(select, [optionIndex]);
       const response = await this.bridge.request({
         command: 'select',
         selection: [optionIndex],
@@ -239,7 +313,96 @@ export class LocalEngineController {
       this.applyBridgeResponse(response);
     }
     await this.applyPendingRetreatTarget();
+    this.rememberVisibleHistoryMark();
     return this.viewResponse();
+  }
+
+  private async applyDamagePlacementSelections(placements: Array<{ target: CardTarget; damage: number }>): Promise<EngineResponse> {
+    const initialSelect = this.observation?.select;
+    if (!initialSelect || !this.isRepeatedDamageCounterSelection(initialSelect)) {
+      throw new Error('No repeated damage counter selection is currently available.');
+    }
+    const requiredCounters = initialSelect.remainDamageCounter;
+    const damageUnit = 10;
+    const expandedTargets: CardTarget[] = [];
+    for (const placement of placements) {
+      if (!placement.target || !Number.isInteger(placement.damage) || placement.damage <= 0 || placement.damage % damageUnit !== 0) {
+        throw new Error('Damage placements must use positive 10-damage increments.');
+      }
+      for (let count = 0; count < placement.damage / damageUnit; count += 1) {
+        expandedTargets.push(placement.target);
+      }
+    }
+    if (expandedTargets.length !== requiredCounters) {
+      throw new Error(`Damage placement must contain exactly ${requiredCounters * damageUnit} damage.`);
+    }
+
+    for (const target of expandedTargets) {
+      const select = this.observation?.select;
+      if (!select || !this.isRepeatedDamageCounterSelection(select)) {
+        throw new Error('CABT stopped asking for damage counter targets before the placement was complete.');
+      }
+      const optionIndex = this.findDamageCounterOptionIndex(select, target);
+      if (optionIndex < 0) {
+        throw new Error('Selected damage counter target is no longer legal.');
+      }
+      this.validateSelection(select, [optionIndex]);
+      const response = await this.bridge.request({
+        command: 'select',
+        selection: [optionIndex],
+      });
+      this.applyBridgeResponse(response);
+    }
+    await this.applyPendingRetreatTarget();
+    this.rememberVisibleHistoryMark();
+    return this.viewResponse();
+  }
+
+  private isRepeatedDamageCounterSelection(select: CabtSelectData): boolean {
+    return select.maxCount === 1
+      && select.remainDamageCounter > 0
+      && (select.context === CabtSelectContext.DAMAGE_COUNTER || select.context === CabtSelectContext.DAMAGE_COUNTER_ANY);
+  }
+
+  private findDamageCounterOptionIndex(select: CabtSelectData, target: CardTarget): number {
+    const current = this.observation?.current;
+    if (!current) {
+      return -1;
+    }
+    const ownerIndex = this.ownerIndexForTarget(target, current.yourIndex);
+    const area = target.slot === SlotType.ACTIVE
+      ? CabtAreaType.ACTIVE
+      : target.slot === SlotType.BENCH
+        ? CabtAreaType.BENCH
+        : null;
+    if (ownerIndex === null || area === null) {
+      return -1;
+    }
+    return select.option.findIndex((option) =>
+      option.area === area
+        && option.index === target.index
+        && (option.playerIndex ?? current.yourIndex) === ownerIndex);
+  }
+
+  private ownerIndexForTarget(target: CardTarget, actorIndex: number): number | null {
+    if (target.player === PlayerType.BOTTOM_PLAYER) {
+      return actorIndex;
+    }
+    if (target.player === PlayerType.TOP_PLAYER) {
+      return actorIndex === 0 ? 1 : 0;
+    }
+    return null;
+  }
+
+  private isDamagePlacementResult(result: unknown): result is Array<{ target: CardTarget; damage: number }> {
+    return Array.isArray(result)
+      && result.every((item) =>
+        item
+          && typeof item === 'object'
+          && 'target' in item
+          && 'damage' in item
+          && typeof (item as { damage?: unknown }).damage === 'number',
+      );
   }
 
   private isRepeatedSingleSelection(select: CabtSelectData): boolean {
@@ -300,7 +463,12 @@ export class LocalEngineController {
       return;
     }
 
+    const select = this.observation?.select;
+    if (!select) {
+      return;
+    }
     this.pendingRetreatTarget = null;
+    this.validateSelection(select, [targetIndex]);
     const response = await this.bridge.request({
       command: 'select',
       selection: [targetIndex],
@@ -331,6 +499,13 @@ export class LocalEngineController {
         attacks: Object.fromEntries(response.attacks.map((attack) => [attack.attackId, attack])),
       };
     }
+    if (typeof response.historyLength === 'number') {
+      this.bridgeHistoryLength = response.historyLength;
+    }
+  }
+
+  private rememberVisibleHistoryMark(): void {
+    this.visibleHistoryMarks.push(this.bridgeHistoryLength);
   }
 
   private viewResponse(): EngineResponse {
@@ -338,7 +513,10 @@ export class LocalEngineController {
   }
 
   private view() {
-    return cabtObservationToGameView(this.observation, this.logs, this.dataMaps);
+    return {
+      ...cabtObservationToGameView(this.observation, this.logs, this.dataMaps),
+      liveHistoryLength: this.bridgeHistoryLength,
+    };
   }
 
   private matchesPlayCardOption(option: CabtOption, payload: any): boolean {
@@ -453,6 +631,8 @@ export class LocalEngineController {
     this.sessionId = '';
     this.observation = null;
     this.pendingRetreatTarget = null;
+    this.bridgeHistoryLength = 0;
+    this.visibleHistoryMarks = [];
     this.logs = [...this.logs, { id: this.logId++, message }];
   }
 }

@@ -21,6 +21,16 @@ input {
   font: inherit;
 }
 
+button,
+input,
+select,
+textarea,
+.card-tile,
+.board-slot,
+.replay-dock {
+  touch-action: manipulation;
+}
+
 button {
   border: 1px solid var(--button-border);
   background: var(--button-bg);

@@ -2,6 +2,7 @@ import type { AttachAssignment } from '../lib/game/preview';
 import type { CardTarget, CardView } from '../lib/game/types';
 import {
   addDamagePlacement,
+  adjustDamagePlacement,
   assignAttachTarget,
   damagePlacementsToResult,
   damageForTarget,
@@ -39,6 +40,16 @@ class PromptSelectionStore {
 
   placeDamage(target: CardTarget, amount: number, requiredDamage: number, maxAllowedDamage: DamagePlacement[]) {
     this.damagePlacements = addDamagePlacement(
+      this.damagePlacements,
+      target,
+      amount,
+      requiredDamage,
+      maxDamageForTarget(maxAllowedDamage, target),
+    );
+  }
+
+  adjustDamage(target: CardTarget, amount: number, requiredDamage: number, maxAllowedDamage: DamagePlacement[]) {
+    this.damagePlacements = adjustDamagePlacement(
       this.damagePlacements,
       target,
       amount,

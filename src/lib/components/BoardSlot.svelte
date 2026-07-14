@@ -1,7 +1,9 @@
 <script lang="ts">
   import CardTile from './CardTile.svelte';
   import { energyIconSrc, pokemonTypeIconSrc, pokemonTypeLabelFor } from '../game/energyIcons';
+  import { slotNameJa } from '../game/jaText';
   import type { PokemonSlotView } from '../game/types';
+  import { cardPreviewStore } from '../../state/cardPreview.svelte';
 
   type Props = {
     slot: PokemonSlotView;
@@ -10,6 +12,9 @@
     promptSelectable?: boolean;
     promptSelected?: boolean;
     slotDelta?: number;
+    damageQuickAmounts?: number[];
+    canAdjustDamage?: (amount: number) => boolean;
+    adjustDamage?: (amount: number) => void;
     placement?: '' | 'top-active-slot' | 'bottom-active-slot';
     onclick?: (event: MouseEvent) => void;
     ondragover?: (event: DragEvent) => void;
@@ -23,6 +28,9 @@
     promptSelectable = false,
     promptSelected = false,
     slotDelta = 0,
+    damageQuickAmounts = [],
+    canAdjustDamage,
+    adjustDamage,
     placement = '',
     onclick,
     ondragover,
@@ -68,98 +76,184 @@
   function pokemonHp(card: { hp?: unknown } | undefined) {
     return typeof card?.hp === 'number' && Number.isFinite(card.hp) ? card.hp : 0;
   }
+
+  function showToolPreview(event: Event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (toolPreview) {
+      cardPreviewStore.show(toolPreview, toolPreviewImageUrl);
+    }
+  }
+
+  function showToolPreviewFromKey(event: KeyboardEvent) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+    showToolPreview(event);
+  }
+
+  function canAdjust(amount: number) {
+    return canAdjustDamage?.(amount) ?? false;
+  }
+
+  function adjustFromControl(event: MouseEvent | KeyboardEvent, amount: number) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (canAdjust(amount)) {
+      adjustDamage?.(amount);
+    }
+  }
+
+  function stopControlPointer(event: PointerEvent) {
+    event.stopPropagation();
+  }
+
+  let showDamageControls = $derived(promptSelectable && damageQuickAmounts.length > 0 && !!adjustDamage);
 </script>
 
-<button
-  type="button"
+<div
   class:active
-  class:empty={slot.empty}
-  class:can-drop={canDrop}
-  class:prompt-selectable={promptSelectable}
-  class:prompt-selected={promptSelected}
-  class={`board-slot ${placement}`}
-  data-testid={`slot-${slot.ownerIndex}-${slot.slot}-${slot.index}`}
-  data-owner-index={slot.ownerIndex}
-  data-slot-kind={slot.slot}
-  data-slot-index={slot.index}
-  title={slot.pokemon?.fullName ?? (slot.slot === 'active' ? 'Active' : `Bench ${slot.index + 1}`)}
-  {onclick}
-  {ondragover}
-  {ondrop}
+  class={`board-slot-frame ${placement}`}
 >
-  {#if slotDelta !== 0}
-    <div class="prompt-damage-badge" class:negative={slotDelta < 0}>
-      {slotDelta > 0 ? '+' : '−'}{Math.abs(slotDelta)}
-    </div>
-  {/if}
+  <button
+    type="button"
+    class:active
+    class:empty={slot.empty}
+    class:can-drop={canDrop}
+    class:prompt-selectable={promptSelectable}
+    class:prompt-selected={promptSelected}
+    class="board-slot"
+    data-testid={`slot-${slot.ownerIndex}-${slot.slot}-${slot.index}`}
+    data-owner-index={slot.ownerIndex}
+    data-slot-kind={slot.slot}
+    data-slot-index={slot.index}
+    title={slot.pokemon?.fullName ?? slotNameJa(slot.slot, slot.index)}
+    {onclick}
+    {ondragover}
+    {ondrop}
+  >
+    {#if slotDelta !== 0}
+      <div class="prompt-damage-badge" class:negative={slotDelta < 0}>
+        {slotDelta > 0 ? '+' : '−'}{Math.abs(slotDelta)}
+      </div>
+    {/if}
 
-  {#if slot.pokemon}
-    <CardTile card={slot.pokemon} damage={slot.damage} />
-    {#if displayHp || pokemonTypeIcon}
-      <div class="pokemon-status">
-        <span
-          class="pokemon-hp-bubble"
-          class:hp-increased={hpIncreased}
-          class:hp-decreased={hpDecreased}
-          title={`${displayHp ? `${displayHp} HP${hpModified ? ` (printed ${printedHp})` : ''}` : 'Pokemon'}${pokemonTypeIcon ? ` · ${pokemonTypeLabel}` : ''}`}
-        >
-          {#if displayHp}
-            <span>{displayHp}</span>
-          {/if}
-          {#if pokemonTypeIcon}
-            <img src={pokemonTypeIcon} alt={pokemonTypeLabel} />
-          {/if}
-        </span>
-      </div>
-    {/if}
-    {#if slot.energy.length}
-      <div class="energy-badges" class:stacked-energy={stackedEnergy} title={`${slot.energy.length} attached energy`}>
-        {#each slot.energy as energy, energyIndex}
-          <img
-            src={energyIconSrc(energy)}
-            alt={energy.name || 'Energy'}
-            class:pending-energy={hasPendingAttach(energy)}
-            style={energyStackStyle(energyIndex)}
-          />
-        {/each}
-      </div>
-    {/if}
-    {#if slot.tools.length}
-      <div class="tool-card-preview" title={toolNames}>
-        {#if showToolImage}
-          <img
-            src={toolPreviewImageUrl}
-            alt={toolPreview?.name || 'Pokemon Tool'}
-            loading="lazy"
-            decoding="async"
-            draggable="false"
-            onerror={() => (failedToolImageUrl = toolPreviewImageUrl ?? '')}
-          />
-        {:else}
-          <span>{slot.tools.length > 1 ? `${slot.tools.length} Tools` : 'Tool'}</span>
-        {/if}
-        {#if slot.tools.length > 1}
-          <span class="tool-count" aria-label={`${slot.tools.length} attached tools`}>{slot.tools.length}</span>
-        {/if}
-      </div>
-    {/if}
-    <div class="slot-badges" title={displayHp ? `${Math.max(0, displayHp - slot.damage)}/${displayHp} HP remaining` : undefined}>
-      {#if slot.specialConditions.length}
-        <span>{slot.specialConditions.length} S</span>
+    {#if slot.pokemon}
+      <CardTile card={slot.pokemon} />
+      {#if displayHp || pokemonTypeIcon}
+        <div class="pokemon-status">
+          <span
+            class="pokemon-hp-bubble"
+            class:hp-increased={hpIncreased}
+            class:hp-decreased={hpDecreased}
+            title={`${displayHp ? `${displayHp} HP${hpModified ? ` (印刷値 ${printedHp})` : ''}` : 'ポケモン'}${pokemonTypeIcon ? ` · ${pokemonTypeLabel}` : ''}`}
+          >
+            {#if displayHp}
+              <span>{displayHp}</span>
+            {/if}
+            {#if pokemonTypeIcon}
+              <img src={pokemonTypeIcon} alt={pokemonTypeLabel} />
+            {/if}
+          </span>
+        </div>
       {/if}
+      {#if slot.energy.length}
+        <div class="energy-badges" class:stacked-energy={stackedEnergy} title={`ついているエネルギー ${slot.energy.length}枚`}>
+          {#each slot.energy as energy, energyIndex}
+            <img
+              src={energyIconSrc(energy)}
+              alt={energy.name || 'エネルギー'}
+              class:pending-energy={hasPendingAttach(energy)}
+              style={energyStackStyle(energyIndex)}
+            />
+          {/each}
+        </div>
+      {/if}
+      {#if slot.tools.length}
+        <div
+          class="tool-card-preview"
+          role="button"
+          tabindex="0"
+          title={slot.tools.length > 1 ? `ついているどうぐ ${slot.tools.length}枚: ${toolNames}` : toolNames}
+          aria-label={slot.tools.length > 1 ? `ついているどうぐ ${slot.tools.length}枚` : `ついているどうぐ ${toolPreview?.name ?? ''}`}
+          onclick={showToolPreview}
+          onkeydown={showToolPreviewFromKey}
+        >
+          {#if showToolImage}
+            <img
+              src={toolPreviewImageUrl}
+              alt={toolPreview?.name || 'ポケモンのどうぐ'}
+              loading="lazy"
+              decoding="async"
+              draggable="false"
+              onerror={() => (failedToolImageUrl = toolPreviewImageUrl ?? '')}
+            />
+          {:else}
+            <span>{slot.tools.length > 1 ? `どうぐ${slot.tools.length}枚` : 'どうぐ'}</span>
+          {/if}
+          {#if slot.tools.length > 1}
+            <span class="tool-count" aria-label={`ついているどうぐ ${slot.tools.length}枚`}>{slot.tools.length}</span>
+          {/if}
+        </div>
+      {/if}
+      {#if slot.damage > 0}
+        <span class="damage-counter board-damage-counter" class:triple-digit={slot.damage >= 100} title={`${slot.damage}ダメージ`}>
+          <span class="damage-counter-value">{slot.damage}</span>
+        </span>
+      {/if}
+      <div class="slot-badges" title={displayHp ? `残りHP ${Math.max(0, displayHp - slot.damage)}/${displayHp}` : undefined}>
+        {#if slot.specialConditions.length}
+          <span>{slot.specialConditions.length} S</span>
+        {/if}
+      </div>
+    {:else}
+      <div class="empty-zone"></div>
+    {/if}
+  </button>
+
+  {#if showDamageControls}
+    <div class="damage-quick-controls" aria-label="ダメカン配分">
+      <button
+        type="button"
+        disabled={!canAdjust(-10)}
+        title="-10"
+        onpointerdown={stopControlPointer}
+        onclick={(event) => adjustFromControl(event, -10)}
+      >−10</button>
+      {#each damageQuickAmounts as amount}
+        <button
+          type="button"
+          disabled={!canAdjust(amount)}
+          title={`+${amount}`}
+          onpointerdown={stopControlPointer}
+          onclick={(event) => adjustFromControl(event, amount)}
+        >+{amount}</button>
+      {/each}
     </div>
-  {:else}
-    <div class="empty-zone"></div>
   {/if}
-</button>
+</div>
 
 <style>
-  .board-slot {
+  .board-slot-frame {
     --slot-card-w: var(--card-w);
     position: relative;
+    z-index: 5;
     width: var(--card-w);
     min-width: 0;
     aspect-ratio: 63 / 88;
+    pointer-events: auto;
+  }
+
+  .board-slot-frame.active {
+    --slot-card-w: var(--active-w);
+    width: var(--active-w);
+  }
+
+  .board-slot {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
     padding: 0;
     border: 0;
     border-radius: 6px;
@@ -176,11 +270,6 @@
     outline: 2px solid rgba(34, 197, 94, 0.78);
     outline-offset: 4px;
     background: rgba(34, 197, 94, 0.06);
-  }
-
-  .board-slot.active {
-    --slot-card-w: var(--active-w);
-    width: var(--active-w);
   }
 
   .board-slot.empty {
@@ -228,6 +317,49 @@
   .prompt-damage-badge.negative {
     background: #166e5b;
     box-shadow: 0 8px 18px rgba(15, 60, 49, 0.32);
+  }
+
+  .damage-quick-controls {
+    position: absolute;
+    left: 50%;
+    bottom: calc(var(--slot-card-w) * 0.06);
+    z-index: 20;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px;
+    width: calc(var(--slot-card-w) * 0.82);
+    transform: translate3d(-50%, 0, 96px);
+    pointer-events: auto;
+  }
+
+  .damage-quick-controls button {
+    display: grid;
+    place-items: center;
+    min-height: clamp(17px, calc(var(--slot-card-w) * 0.16), 24px);
+    padding: 0;
+    border: 1px solid rgba(129, 71, 21, 0.46);
+    border-radius: 5px;
+    background: rgba(255, 247, 237, 0.96);
+    box-shadow: 0 4px 9px rgba(94, 36, 12, 0.18);
+    color: #7c2d12;
+    font-size: clamp(8px, calc(var(--slot-card-w) * 0.085), 11px);
+    font-weight: 950;
+    line-height: 1;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .damage-quick-controls button:not(:disabled):hover,
+  .damage-quick-controls button:not(:disabled):focus-visible {
+    border-color: rgba(234, 88, 12, 0.85);
+    background: #ffedd5;
+    outline: 2px solid rgba(251, 146, 60, 0.42);
+    outline-offset: 1px;
+  }
+
+  .damage-quick-controls button:disabled {
+    opacity: 0.36;
+    cursor: default;
   }
 
   .empty-zone {
@@ -368,7 +500,15 @@
     box-shadow:
       0 5px 10px rgba(23, 30, 38, 0.34),
       inset 0 0 0 1px rgba(26, 31, 39, 0.18);
-    pointer-events: none;
+    cursor: zoom-in;
+    pointer-events: auto;
+  }
+
+  .tool-card-preview:hover {
+    border-color: rgba(20, 184, 166, 0.9);
+    box-shadow:
+      0 8px 16px rgba(15, 118, 110, 0.3),
+      inset 0 0 0 1px rgba(13, 148, 136, 0.34);
   }
 
   .tool-card-preview img {
@@ -406,5 +546,43 @@
     font-size: clamp(8px, calc(var(--slot-card-w) * 0.07), 11px);
     font-weight: 900;
     line-height: 1;
+  }
+
+  .damage-counter {
+    position: absolute;
+    top: 32%;
+    left: 50%;
+    z-index: 12;
+    display: inline-grid;
+    place-items: center;
+    width: clamp(34px, calc(var(--slot-card-w, var(--card-w, 88px)) * 0.38), 66px);
+    height: clamp(34px, calc(var(--slot-card-w, var(--card-w, 88px)) * 0.38), 66px);
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(128, 76, 18, 0.46);
+    background:
+      radial-gradient(circle at 34% 24%, rgba(255, 232, 121, 0.9), transparent 34%),
+      linear-gradient(180deg, #ffb03d 0%, #f39023 54%, #c97018 100%);
+    box-shadow:
+      0 3px 8px rgba(95, 48, 13, 0.28),
+      inset 0 2px 2px rgba(255, 236, 155, 0.7),
+      inset 0 -2px 3px rgba(128, 60, 10, 0.34);
+    color: #fff8df;
+    font-size: clamp(15px, calc(var(--slot-card-w, var(--card-w, 88px)) * 0.19), 30px);
+    font-weight: 950;
+    line-height: 1;
+    -webkit-text-stroke: 1.3px #1f1f1f;
+    paint-order: stroke fill;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    text-shadow: none;
+  }
+
+  .damage-counter-value {
+    display: inline-block;
+  }
+
+  .damage-counter.triple-digit {
+    font-size: clamp(13px, calc(var(--slot-card-w, var(--card-w, 88px)) * 0.165), 26px);
   }
 </style>

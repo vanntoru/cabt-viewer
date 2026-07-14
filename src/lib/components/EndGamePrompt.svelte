@@ -2,10 +2,11 @@
   type Props = {
     resultLabel: string;
     turn: number;
-    onconfirm: () => void;
+    onBack: () => void;
+    onRematch: () => void;
   };
 
-  let { resultLabel, turn, onconfirm }: Props = $props();
+  let { resultLabel, turn, onBack, onRematch }: Props = $props();
 </script>
 
 <div class="end-game-overlay" role="dialog" aria-modal="true" aria-labelledby="end-game-title">
@@ -15,7 +16,10 @@
       <h2 id="end-game-title">{resultLabel}</h2>
       <p>Finished on turn {turn}</p>
     </div>
-    <button type="button" onclick={onconfirm}>Back to main screen</button>
+    <div class="end-game-actions">
+      <button class="primary" type="button" onclick={onRematch}>もう一戦</button>
+      <button type="button" onclick={onBack}>元の画面に戻る</button>
+    </div>
   </section>
 </div>
 
@@ -65,14 +69,25 @@
     font-size: 14px;
   }
 
+  .end-game-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
   .end-game-panel button {
-    justify-self: start;
+    min-height: 36px;
     border-radius: 5px;
     border: 1px solid var(--selection-border-strong);
-    background: var(--accent-soft);
-    color: var(--text-primary);
+    background: var(--button-bg);
+    color: var(--button-text);
     padding: 9px 12px;
     font-weight: 900;
+  }
+
+  .end-game-panel button.primary {
+    background: var(--accent-soft);
+    color: var(--text-primary);
   }
 
   .end-game-panel button:hover,

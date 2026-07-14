@@ -461,11 +461,13 @@ function buildPlayerView(
     hand: player.hand
       ? player.hand.map((item) => cardToView(item, dataMaps))
       : Array.from({ length: player.handCount }, () => ({ name: 'Card', fullName: 'Card' })),
+    deck: (player.deck ?? []).map((item) => cardToView(item, dataMaps)),
     deckCount: player.deckCount,
     discard: player.discard.map((item) => cardToView(item, dataMaps)),
     lostZone: [],
     stadium: stadiumForPlayer(observation.current?.stadium ?? [], index).map((item) => cardToView(item, dataMaps)),
     playZone: [],
+    prize: player.prize.filter((item): item is NonNullable<typeof item> => !!item).map((item) => cardToView(item, dataMaps)),
     prizesLeft: player.prize.length,
     active: pokemonToSlot(player.active[0] ?? null, index, 'active', 0, activePlayerIndex, player, dataMaps),
     bench: Array.from({ length: player.benchMax }, (_item, benchIndex) =>
@@ -521,12 +523,14 @@ function cardToView(cardRef: CabtCard, dataMaps: CabtDataMaps): CardView {
   if (!data) {
     return {
       id: cardRef.id,
+      serial: cardRef.serial,
       name: `Card ${cardRef.id}`,
       fullName: `Card ${cardRef.id}`,
     };
   }
   const view: CardView = {
     id: data.cardId,
+    serial: cardRef.serial,
     name: data.name,
     fullName: data.name,
     set: data.set,
@@ -559,6 +563,40 @@ function buildPrompts(observation: CabtObservation, activePlayerIndex: number, d
     return [];
   }
   const id = promptIdForSelect(select);
+  if (isDamageCounterSelectionPrompt(select)) {
+    const targets = damageCounterTargets(observation, activePlayerIndex);
+    const requiredDamage = Math.max(0, select.remainDamageCounter) * 10;
+    return [
+      {
+        id,
+        className: 'PutDamagePrompt',
+        type: 'cabt-damage-counter-select',
+        playerId: activePlayerIndex,
+        playerIndex: activePlayerIndex,
+        supported: true,
+        message: cabtSelectLabel(select.context),
+        resultSchema: 'damagePlacements',
+        fields: {
+          damage: requiredDamage,
+          targets: targets.map((item) => item.target),
+          targetOptionMap: targets.map((item) => ({
+            target: item.target,
+            optionIndex: item.optionIndex,
+          })),
+          maxAllowedDamage: targets.map((item) => ({
+            target: item.target,
+            damage: requiredDamage,
+          })),
+          options: {
+            min: requiredDamage,
+            max: requiredDamage,
+            damageMultiple: 10,
+          },
+          cabtSelect: select,
+        },
+      },
+    ];
+  }
   if (isPrizeSelectionPrompt(select)) {
     return [
       {
@@ -655,6 +693,60 @@ function repeatedEnergyPaymentCount(select: CabtSelectData) {
     return 0;
   }
   return select.remainEnergyCost;
+}
+
+function isDamageCounterSelectionPrompt(select: CabtSelectData) {
+  return select.remainDamageCounter > 0
+    && (select.context === CabtSelectContext.DAMAGE_COUNTER || select.context === CabtSelectContext.DAMAGE_COUNTER_ANY)
+    && select.option.some((option) => option.area === CabtAreaType.ACTIVE || option.area === CabtAreaType.BENCH);
+}
+
+function damageCounterTargets(observation: CabtObservation, activePlayerIndex: number) {
+  const select = observation.select;
+  const current = observation.current;
+  if (!select || !current) {
+    return [];
+  }
+  const seen = new Set<string>();
+  const targets: Array<{ target: CardTarget; optionIndex: number }> = [];
+  for (const [optionIndex, option] of select.option.entries()) {
+    const slot = damageTargetSlot(option, observation);
+    const areaSlot = option.area === CabtAreaType.ACTIVE ? SlotType.ACTIVE : option.area === CabtAreaType.BENCH ? SlotType.BENCH : null;
+    if (!slot || areaSlot === null || option.index === undefined || option.index === null) {
+      continue;
+    }
+    const ownerIndex = option.playerIndex ?? current.yourIndex;
+    const target = targetFor(activePlayerIndex, ownerIndex, areaSlot, option.index);
+    const key = `${target.player}:${target.slot}:${target.index}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    targets.push({
+      target,
+      optionIndex,
+    });
+  }
+  return targets;
+}
+
+function damageTargetSlot(option: CabtOption, observation: CabtObservation): CabtPokemon | null {
+  const current = observation.current;
+  if (!current || option.index === undefined || option.index === null) {
+    return null;
+  }
+  const ownerIndex = option.playerIndex ?? current.yourIndex;
+  const player = current.players[ownerIndex];
+  if (!player) {
+    return null;
+  }
+  if (option.area === CabtAreaType.ACTIVE) {
+    return player.active[option.index] ?? null;
+  }
+  if (option.area === CabtAreaType.BENCH) {
+    return player.bench[option.index] ?? null;
+  }
+  return null;
 }
 
 function isCardSelectionPrompt(observation: CabtObservation) {
@@ -842,6 +934,8 @@ function cabtSelectLabel(context: number) {
     [CabtSelectContext.TO_HAND]: 'Choose Card',
     [CabtSelectContext.DISCARD]: 'Choose Discard',
     [CabtSelectContext.TO_PRIZE]: 'Choose Prize Card',
+    [CabtSelectContext.DAMAGE_COUNTER]: 'Place damage counters',
+    [CabtSelectContext.DAMAGE_COUNTER_ANY]: 'Place damage counters',
     [CabtSelectContext.DISCARD_ENERGY_CARD]: 'Choose energy to discard',
     [CabtSelectContext.DISCARD_ENERGY]: 'Choose energy to discard',
     [CabtSelectContext.TO_HAND_ENERGY]: 'Choose energy for your hand',

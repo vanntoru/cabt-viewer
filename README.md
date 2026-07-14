@@ -91,16 +91,18 @@ LAN, run `npm run dev:lan`.
 ## Regenerate CABT Metadata
 
 Generated metadata is committed in `src/lib/cabt` so a fresh clone can show
-card names, set numbers, images, HP, retreat costs, abilities, and attacks in
-replay mode without starting the native CABT engine.
+Japanese card names, Japanese attack names, set numbers, images, HP, retreat
+costs, abilities, and attacks in replay mode without starting the native CABT
+engine.
 
 Most users do not need to regenerate it. Maintainers can refresh it from the
-Kaggle-provided card CSV and sample submission.
+Kaggle-provided card CSVs and sample submission.
 
 By default, the generator expects these local, ignored paths inside this repo:
 
 ```text
 data/EN_Card_Data.csv
+data/JP_Card_Data.csv
 sample_submission/
 ```
 
@@ -122,11 +124,23 @@ You can override those paths:
 ```bash
 npm run generate:cabt-data -- \
   --card-csv /absolute/path/to/EN_Card_Data.csv \
+  --jp-card-csv /absolute/path/to/JP_Card_Data.csv \
   --sample-submission /absolute/path/to/sample_submission
 ```
 
 The Docker helper mounts this repo at `/workspace`. For arbitrary external
 paths, either run the native command on Linux or adapt the Docker mount paths.
+
+The generator writes:
+
+- `src/lib/cabt/cardData.generated.json`: card metadata used by replay mode.
+- `src/lib/cabt/attackData.generated.json`: CABT attack metadata from `cg.api`.
+- `src/lib/cabt/attackNamesJa.generated.json`: Japanese attack-name lookup from
+  `JP_Card_Data.csv`.
+
+If `JP_Card_Data.csv` is missing, the generator skips
+`attackNamesJa.generated.json`; do not refresh the committed metadata from that
+partial input unless English attack names are acceptable for the target build.
 
 ## Data Contract
 

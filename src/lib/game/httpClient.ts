@@ -110,4 +110,8 @@ export const localGameApi: GameCommandApi & {
   resolvePrompt(id: number, result: unknown) {
     return send({ type: 'resolvePrompt', payload: { id, result } });
   },
+
+  replayFromStep(stepIndex: number, historyLength?: number) {
+    return send({ type: 'rewindTo', payload: { stepIndex, historyLength } });
+  },
 };

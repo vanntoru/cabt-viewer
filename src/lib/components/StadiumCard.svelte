@@ -1,5 +1,6 @@
 <script lang="ts">
   import CardTile from './CardTile.svelte';
+  import { zoneNameJa } from '../game/jaText';
   import type { CardView, PlayerView } from '../game/types';
 
   type ZoneName = 'discard' | 'lostZone' | 'stadium' | 'playZone';
@@ -20,7 +21,7 @@
   class:top-stadium-card={placement === 'top'}
   class:bottom-stadium-card={placement === 'bottom'}
   title={card.fullName}
-  onclick={() => showZone(owner.index, 'stadium', `${owner.name} stadium`)}
+  onclick={() => showZone(owner.index, 'stadium', `${owner.name}の${zoneNameJa('stadium')}`)}
 >
   <CardTile {card} compact />
 </button>

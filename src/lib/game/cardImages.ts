@@ -6,6 +6,7 @@ export type SetImageInfo = {
 };
 
 export type CardImageInput = {
+  id?: number;
   imageUrl?: string;
   set?: string;
   setNumber?: string;
@@ -48,7 +49,20 @@ export const setImageMap: Record<string, string | SetImageInfo> = {
   CRI: { id: 'me4', source: 'scrydex' },
 };
 
+const LOCAL_JP_CARD_IMAGE_BASE = '/jp-card-images';
+
+function localJapaneseCardImageUrl(cardId: number | undefined): string | undefined {
+  if (typeof cardId !== 'number' || !Number.isFinite(cardId)) {
+    return undefined;
+  }
+  return `${LOCAL_JP_CARD_IMAGE_BASE}/${String(cardId).padStart(4, '0')}.jpg`;
+}
+
 export function resolveCardImageUrl(card: CardImageInput): string | undefined {
+  const localImageUrl = localJapaneseCardImageUrl(card.id);
+  if (localImageUrl) {
+    return localImageUrl;
+  }
   if (card.imageUrl) {
     return card.imageUrl;
   }

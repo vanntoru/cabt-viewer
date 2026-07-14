@@ -117,6 +117,35 @@ export function addDamagePlacement(
   );
 }
 
+export function adjustDamagePlacement(
+  placements: DamagePlacement[],
+  target: CardTarget,
+  amount: number,
+  requiredDamage: number,
+  maxTargetDamage = Infinity,
+) {
+  if (amount === 0) {
+    return placements;
+  }
+  if (amount > 0) {
+    return addDamagePlacement(placements, target, amount, requiredDamage, maxTargetDamage);
+  }
+
+  const currentDamage = damageForTarget(placements, target);
+  const nextDamage = Math.max(0, currentDamage + amount);
+  if (nextDamage === currentDamage) {
+    return placements;
+  }
+  if (nextDamage === 0) {
+    return placements.filter((placement) => !sameTarget(placement.target, target));
+  }
+  return placements.map((placement) =>
+    sameTarget(placement.target, target)
+      ? { ...placement, damage: nextDamage }
+      : placement,
+  );
+}
+
 export function pruneDamagePlacements(placements: DamagePlacement[], targets: CardTarget[]) {
   return placements.filter((placement) => targets.some((target) => sameTarget(target, placement.target)));
 }

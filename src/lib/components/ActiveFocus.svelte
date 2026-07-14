@@ -1,6 +1,7 @@
 <script lang="ts">
   import CardTile from './CardTile.svelte';
   import { normalizedTypeName, pokemonTypeIconSrc, pokemonTypeLabelFor } from '../game/energyIcons';
+  import { slotNameJa } from '../game/jaText';
   import type { AttackView, AvailableActionsView, CardTarget, CardView, PokemonSlotView } from '../game/types';
 
   type Props = {
@@ -9,6 +10,7 @@
     benchTargets?: PokemonSlotView[];
     busy?: boolean;
     promptActive?: boolean;
+    replayMode?: boolean;
     canAct?: boolean;
     canRetreatToSlot: (from: PokemonSlotView, to: PokemonSlotView) => boolean;
     close: () => void;
@@ -23,6 +25,7 @@
     benchTargets = [],
     busy = false,
     promptActive = false,
+    replayMode = false,
     canAct = false,
     canRetreatToSlot,
     close,
@@ -151,28 +154,28 @@
   <button
     type="button"
     class="active-focus-backdrop"
-    aria-label="Close Pokemon actions"
+    aria-label="ポケモン詳細を閉じる"
     onclick={close}
   ></button>
   <section class="active-focus" class:inspecting={inspectingAttachments} aria-label={`${pokemon.name} actions`}>
     {#if inspectingAttachments}
-      <div class="attachment-inspector" role="dialog" aria-modal="false" aria-label={`${pokemon.name} attached cards`}>
+        <div class="attachment-inspector" role="dialog" aria-modal="false" aria-label={`${pokemon.name}についているカード`}>
         <div class="attachment-inspector-topline">
           <div>
-            <strong>Attached to {pokemon.name}</strong>
-            <span>{detailAttachments.length} card{detailAttachments.length === 1 ? '' : 's'}</span>
+            <strong>{pokemon.name}についているカード</strong>
+            <span>{detailAttachments.length}枚</span>
           </div>
-          <button type="button" class="focus-close" onclick={() => (inspectingAttachments = false)} aria-label="Close attached cards">
-            Close
+          <button type="button" class="focus-close" onclick={() => (inspectingAttachments = false)} aria-label="ついているカードを閉じる">
+            閉じる
           </button>
         </div>
         <div class="attachment-rail">
           <div class="attachment-rail-card main-card" title={pokemon.fullName || pokemon.name}>
-            <CardTile card={pokemon} />
+            <CardTile card={pokemon} previewable />
           </div>
           {#each detailAttachments as card, index (`inspect-${card.id ?? card.fullName}-${index}`)}
             <div class="attachment-rail-card" title={card.fullName || card.name}>
-              <CardTile card={card} />
+              <CardTile card={card} previewable />
             </div>
           {/each}
         </div>
@@ -183,7 +186,7 @@
           {#if detailAttachments.length}
             {#each detailAttachments as card, index (`${card.id ?? card.fullName}-${index}`)}
               <div class={`attached-card ${attachmentClass(index)}`} title={card.fullName || card.name}>
-                <CardTile card={card} />
+                <CardTile card={card} previewable />
               </div>
             {/each}
           {/if}
@@ -191,14 +194,14 @@
             type="button"
             class="focus-card-button"
             class:has-attachments={detailAttachments.length > 0}
-            aria-label={detailAttachments.length ? 'Inspect attached cards' : pokemon.name}
+            aria-label={detailAttachments.length ? 'ついているカードを見る' : pokemon.name}
             onclick={() => {
               if (detailAttachments.length) {
                 inspectingAttachments = true;
               }
             }}
           >
-            <CardTile card={pokemon} />
+            <CardTile card={pokemon} previewable />
           </button>
         </div>
       </div>
@@ -218,23 +221,24 @@
               </span>
             </div>
             <span class="focus-meta">
-              {slot.slot === 'active' ? 'Active' : `Bench ${slot.index + 1}`}
-              · {slot.energy.length} Energy
+              {slotNameJa(slot.slot, slot.index)}
+              · エネルギー{slot.energy.length}枚
               {#if slot.tools.length}
-                · {slot.tools.length} Tool
+                · どうぐ{slot.tools.length}枚
               {/if}
             </span>
           </div>
-          <button type="button" class="focus-close" onclick={close} aria-label="Close Pokemon actions">
-            Close
+          <button type="button" class="focus-close" onclick={close} aria-label="ポケモン詳細を閉じる">
+            閉じる
           </button>
         </div>
 
+        {#if !replayMode}
         <div class="focus-actions">
           <div class="action-stack">
             {#if pokemon.powers?.length}
               <div class="action-group">
-                <span>Abilities</span>
+                <span>特性</span>
                 {#each pokemon.powers as power}
                   {@const action = abilityAction(power.name)}
                   <button
@@ -250,11 +254,11 @@
                         class="ability-badge"
                         class:used={action?.used}
                         src="/assets/ui/ability-badge.png"
-                        alt={action?.used ? 'Used ability' : 'Ability'}
+                        alt={action?.used ? '使用済みの特性' : '特性'}
                       />
                       <strong>{power.name}</strong>
                       {#if action?.used}
-                        <span class="action-kind">Used</span>
+                        <span class="action-kind">使用済み</span>
                       {/if}
                     </span>
                     {#if power.text}
@@ -267,7 +271,7 @@
 
             {#if isActive && pokemon.attacks?.length}
               <div class="action-group">
-                <span>Attacks</span>
+                <span>ワザ</span>
                 {#each pokemon.attacks as item}
                   {@const cost = attackCost(item)}
                   {@const affordable = canPayAttack(item)}
@@ -280,7 +284,7 @@
                   >
                     <span class="action-card-topline">
                       <span class="attack-name-line">
-                        <span class="energy-cost" aria-label={`${cost.length} energy cost`}>
+                        <span class="energy-cost" aria-label={`必要エネルギー ${cost.length}個`}>
                           {#each cost as token (token.key)}
                             <img class:unpaid={!token.paid} src={token.icon} alt={token.label} title={token.label} />
                           {/each}
@@ -309,16 +313,17 @@
                 title={retreatReason}
                 onclick={startRetreat}
               >
-                <span class="energy-cost" aria-label={`${retreatCost.length} retreat cost`}>
+                <span class="energy-cost" aria-label={`にげるエネルギー ${retreatCost.length}個`}>
                   {#each retreatCost as token (token.key)}
                     <img class:unpaid={!token.paid} src={token.icon} alt={token.label} title={token.label} />
                   {/each}
                 </span>
-                <strong>Retreat</strong>
+                <strong>にげる</strong>
               </button>
             </div>
           {/if}
         </div>
+        {/if}
       </div>
     {/if}
   </section>
