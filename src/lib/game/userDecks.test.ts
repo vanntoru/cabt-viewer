@@ -5,6 +5,7 @@ import {
   cardSignature,
   migrateLegacyUploadedDecks,
   requestedUserDeckId,
+  resolveUserDeckApiBase,
   urlWithoutUserDeck,
   userDeckChoiceKey,
   userDeckUsesKnownCards,
@@ -43,6 +44,15 @@ afterEach(() => {
 });
 
 describe('user deck helpers', () => {
+  it('uses the viewer host for the shared Workbench API', () => {
+    expect(resolveUserDeckApiBase('http://100.113.65.5:5173/?view=play#board'))
+      .toBe('http://100.113.65.5:8787/api/user-decks');
+    expect(resolveUserDeckApiBase('http://vanntorumac.local:5173/'))
+      .toBe('http://vanntorumac.local:8787/api/user-decks');
+    expect(resolveUserDeckApiBase('file:///tmp/index.html'))
+      .toBe('http://127.0.0.1:8787/api/user-decks');
+  });
+
   it('parses and removes the deep-link parameter without changing other query parameters', () => {
     expect(requestedUserDeckId('?view=play&userDeck=abc-123')).toBe('abc-123');
     expect(userDeckChoiceKey('abc-123')).toBe('user:abc-123');

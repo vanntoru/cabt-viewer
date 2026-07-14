@@ -1,7 +1,25 @@
 import type { DeckCardMetadata } from './deckImport';
 import type { UploadedDeck } from './uploadedDecks';
 
-export const USER_DECK_API_BASE = 'http://127.0.0.1:8787/api/user-decks';
+const LOCAL_USER_DECK_API_BASE = 'http://127.0.0.1:8787/api/user-decks';
+
+export function resolveUserDeckApiBase(pageHref?: string): string {
+  const href = pageHref ?? (typeof window !== 'undefined' ? window.location.href : '');
+  if (!href) {
+    return LOCAL_USER_DECK_API_BASE;
+  }
+  const pageUrl = new URL(href);
+  if (pageUrl.protocol !== 'http:' && pageUrl.protocol !== 'https:') {
+    return LOCAL_USER_DECK_API_BASE;
+  }
+  pageUrl.port = '8787';
+  pageUrl.pathname = '/api/user-decks';
+  pageUrl.search = '';
+  pageUrl.hash = '';
+  return pageUrl.toString();
+}
+
+export const USER_DECK_API_BASE = resolveUserDeckApiBase();
 export const LEGACY_MIGRATION_KEY = 'cabt.uploadedDecks.v1.migrated-to-shared-v1';
 
 export type UserDeckCard = {
@@ -148,7 +166,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       headers: { 'Content-Type': 'application/json', ...(options.headers ?? {}) },
     });
   } catch (cause) {
-    throw new UserDeckApiError('マイデッキAPIに接続できません。Workbench APIを起動してください。', 0, cause);
+    throw new UserDeckApiError(
+      `マイデッキAPIに接続できません（${new URL(USER_DECK_API_BASE).origin}）。Workbench APIを起動してください。`,
+      0,
+      cause,
+    );
   }
   const contentType = response.headers.get('content-type') ?? '';
   const payload = contentType.includes('application/json') ? await response.json() : await response.text();
