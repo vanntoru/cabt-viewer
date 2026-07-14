@@ -118,11 +118,17 @@ export class LocalEngineController {
           return await this.retreat(command.payload);
         case 'passTurn':
           return await this.selectMatchingOption((option) => option.type === CabtOptionType.END);
-        case 'resolvePrompt':
-          if (this.isDamagePlacementResult(command.payload?.result)) {
-            return await this.applyDamagePlacementSelections(command.payload.result);
+        case 'resolvePrompt': {
+          const result = command.payload?.result;
+          const select = this.observation?.select;
+          if (select && this.isRepeatedDamageCounterSelection(select)) {
+            if (!this.isDamagePlacementResult(result)) {
+              throw new Error('This CABT prompt expects damage placements.');
+            }
+            return await this.applyDamagePlacementSelections(result);
           }
-          return await this.applySelection(this.normalizePromptSelection(command.payload?.result));
+          return await this.applySelection(this.normalizePromptSelection(result));
+        }
         default:
           return { ok: false, error: `Unsupported command: ${command.type}`, view: this.view() };
       }

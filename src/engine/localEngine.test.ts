@@ -160,6 +160,49 @@ describe('LocalEngineController', () => {
     await expect(engine.applySelection([0, 0])).rejects.toThrow('Selection must contain 1-1 option');
   });
 
+  it('sends an empty optional setup bench selection to the CABT bridge', async () => {
+    const previousEngineMode = process.env.CABT_ENGINE_MODE;
+    delete process.env.CABT_ENGINE_MODE;
+    try {
+      const engine = new LocalEngineController() as any;
+      const selections: number[][] = [];
+      const select = {
+        type: 1,
+        context: CabtSelectContext.SETUP_BENCH_POKEMON,
+        minCount: 0,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [{ type: CabtOptionType.CARD, area: CabtAreaType.HAND, index: 0, playerIndex: 0 }],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      };
+      engine.sessionId = 'test-session';
+      engine.dataMaps = { cardData: {}, attacks: {} };
+      engine.observation = { select, logs: [], current: null };
+      engine.bridge = {
+        request: async ({ selection }: { selection: number[] }) => {
+          selections.push(selection);
+          return {
+            ok: true,
+            observation: { select: null, logs: [], current: null },
+          };
+        },
+      };
+
+      const response = await engine.handle({
+        type: 'resolvePrompt',
+        payload: { sessionId: 'test-session', result: [] },
+      });
+
+      expect(response.ok).toBe(true);
+      expect(selections).toEqual([[]]);
+    } finally {
+      process.env.CABT_ENGINE_MODE = previousEngineMode;
+    }
+  });
+
   it('batches repeated single-energy retreat payment prompts', async () => {
     const engine = new LocalEngineController() as any;
     const selections: number[][] = [];
