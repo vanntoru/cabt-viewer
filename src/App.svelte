@@ -28,9 +28,19 @@
   import {
     extractUploadedDeckFromZipFile,
     loadUploadedDecks,
-    saveUploadedDecks,
-    type UploadedDeck,
   } from './lib/game/uploadedDecks';
+  import {
+    createUserDeck,
+    deleteUserDeck,
+    fetchUserDecks,
+    migrateLegacyUploadedDecks,
+    requestedUserDeckId,
+    urlWithoutUserDeck,
+    userDeckCardsForCabt,
+    userDeckChoiceKey,
+    userDeckUsesKnownCards,
+    type UserDeck,
+  } from './lib/game/userDecks';
   import { labelFor } from './lib/game/labels';
   import cardRows from './lib/cabt/cardData.generated.json';
   import { CabtAreaType } from './lib/cabt/types';
@@ -121,11 +131,13 @@
 
   let showPromptGallery = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'prompt-gallery';
   const initialReplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'replay';
+  const initialRequestedUserDeckId = typeof window !== 'undefined' ? requestedUserDeckId(window.location.search) : '';
   let homeMode = $state<HomeMode>(initialReplayMode ? 'logs' : 'play');
   let agents = $state<AgentOption[]>([]);
   let gameLogs = $state<GameLogEntry[]>([]);
   let roundRobinDeckCatalog = $state<RoundRobinDeckCatalog>({ decks: [] });
-  let uploadedDecks = $state<UploadedDeck[]>([]);
+  let userDecks = $state<UserDeck[]>([]);
+  let pendingRequestedUserDeckId = $state(initialRequestedUserDeckId);
   let selectedAgentId = $state('');
   let selectedPlayerDeckId = $state('');
   let selectedOpponentDeckId = $state('');
@@ -134,6 +146,8 @@
   let catalogError = $state('');
   let uploadBusy = $state(false);
   let uploadError = $state('');
+  let userDeckBusy = $state(false);
+  let userDeckError = $state('');
   let knownDecksByPlayer = $state<Record<number, KnownDeckMemory>>({});
   let appliedKnownDeckLogKeys = $state<string[]>([]);
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
@@ -170,8 +184,8 @@
   let workbenchReturnUrl = $derived(resolveWorkbenchReturnUrl());
   onMount(() => {
     const stopThemeSync = viewSettingsStore.startThemeSync();
-    uploadedDecks = loadUploadedDecks();
     void refreshCatalog();
+    void refreshUserDecks();
     if (initialReplayMode) {
       void replayStore.loadSaved();
     }
@@ -194,23 +208,25 @@
     };
   });
   $effect(() => {
-    const choices = availableDeckChoiceKeys();
-    if (!choices.length) {
+    const playerChoices = availablePlayerDeckChoiceKeys();
+    const opponentChoices = availableOpponentDeckChoiceKeys();
+    if (!playerChoices.length) {
       selectedPlayerDeckId = '';
+    } else {
+      const playerDeckId = playerChoices.includes(selectedPlayerDeckId) ? selectedPlayerDeckId : playerChoices[0];
+      if (selectedPlayerDeckId !== playerDeckId) {
+        selectedPlayerDeckId = playerDeckId;
+      }
+    }
+    if (!opponentChoices.length) {
       selectedOpponentDeckId = '';
-      return;
-    }
-
-    const playerDeckId = choices.includes(selectedPlayerDeckId) ? selectedPlayerDeckId : choices[0];
-    if (selectedPlayerDeckId !== playerDeckId) {
-      selectedPlayerDeckId = playerDeckId;
-    }
-
-    const opponentDeckId = choices.includes(selectedOpponentDeckId)
+    } else {
+      const opponentDeckId = opponentChoices.includes(selectedOpponentDeckId)
       ? selectedOpponentDeckId
-      : choices.find((key) => key !== playerDeckId) ?? choices[0];
-    if (selectedOpponentDeckId !== opponentDeckId) {
-      selectedOpponentDeckId = opponentDeckId;
+        : opponentChoices.find((key) => key !== selectedPlayerDeckId) ?? opponentChoices[0];
+      if (selectedOpponentDeckId !== opponentDeckId) {
+        selectedOpponentDeckId = opponentDeckId;
+      }
     }
   });
   $effect(() => {
@@ -486,6 +502,13 @@
   });
 
   async function startGame() {
+    if (selectedPlayerDeckId.startsWith('user:')) {
+      const selectedDeck = userDecks.find((deck) => userDeckChoiceKey(deck.id) === selectedPlayerDeckId);
+      if (!selectedDeck || !userDeckUsesKnownCards(selectedDeck, cardRows)) {
+        gameStore.setError('選択したマイデッキは現在のカードデータでは対戦に使えません。Card Viewerで内容を確認してください。');
+        return;
+      }
+    }
     const decks = deckImportStore.parseLocalGameDecks();
     if (!decks.ok) {
       gameStore.setError(decks.error);
@@ -536,24 +559,59 @@
     }
   }
 
+  async function refreshUserDecks() {
+    userDeckBusy = true;
+    userDeckError = '';
+    try {
+      const sharedDecks = await fetchUserDecks();
+      userDecks = await migrateLegacyUploadedDecks(loadUploadedDecks(), sharedDecks);
+      if (pendingRequestedUserDeckId) {
+        const requestedKey = userDeckChoiceKey(pendingRequestedUserDeckId);
+        if (userDecks.some((deck) => userDeckChoiceKey(deck.id) === requestedKey)) {
+          selectedPlayerDeckId = requestedKey;
+          homeMode = 'play';
+        } else {
+          userDeckError = `指定されたマイデッキが見つかりません: ${pendingRequestedUserDeckId}`;
+        }
+        if (typeof window !== 'undefined') {
+          window.history.replaceState(null, '', urlWithoutUserDeck(new URL(window.location.href)));
+        }
+        pendingRequestedUserDeckId = '';
+      }
+    } catch (error) {
+      userDeckError = error instanceof Error ? error.message : String(error);
+    } finally {
+      userDeckBusy = false;
+    }
+  }
+
   function roundRobinDeckKey(id: string): string {
     return `round:${id}`;
   }
 
-  function uploadedDeckKey(id: string): string {
-    return `uploaded:${id}`;
-  }
-
-  function availableDeckChoiceKeys(): string[] {
+  function availablePlayerDeckChoiceKeys(): string[] {
     return [
       ...roundRobinDeckCatalog.decks.map((deck) => roundRobinDeckKey(deck.id)),
-      ...uploadedDecks.map((deck) => uploadedDeckKey(deck.id)),
+      ...userDecks.map((deck) => userDeckChoiceKey(deck.id)),
     ];
   }
 
+  function availableOpponentDeckChoiceKeys(): string[] {
+    return roundRobinDeckCatalog.decks.map((deck) => roundRobinDeckKey(deck.id));
+  }
+
   function deckTextForChoice(choiceKey: string): string {
-    if (choiceKey.startsWith('uploaded:')) {
-      return uploadedDecks.find((deck) => uploadedDeckKey(deck.id) === choiceKey)?.deckText ?? '';
+    if (choiceKey.startsWith('user:')) {
+      const deck = userDecks.find((item) => userDeckChoiceKey(item.id) === choiceKey);
+      if (!deck || !userDeckUsesKnownCards(deck, cardRows)) {
+        return '';
+      }
+      try {
+        return formatCanonicalDeckList(userDeckCardsForCabt(deck), cardRows);
+      } catch (error) {
+        userDeckError = error instanceof Error ? error.message : String(error);
+        return '';
+      }
     }
     const roundRobinId = choiceKey.startsWith('round:') ? choiceKey.slice('round:'.length) : choiceKey;
     const deck = roundRobinDeckCatalog.decks.find((item) => item.id === roundRobinId);
@@ -577,15 +635,19 @@
     uploadBusy = true;
     uploadError = '';
     try {
-      const extracted = [] as UploadedDeck[];
+      const imported = [] as UserDeck[];
       for (const file of fileArray) {
-        extracted.push(await extractUploadedDeckFromZipFile(file, cardRows));
+        const extracted = await extractUploadedDeckFromZipFile(file, cardRows);
+        imported.push(await createUserDeck({
+          name: extracted.name,
+          cards: extracted.cards.map((card) => ({ card_id: card.cardId, count: card.count })),
+          source: 'cabt-zip',
+        }));
       }
-      uploadedDecks = [...uploadedDecks, ...extracted];
-      saveUploadedDecks(uploadedDecks);
-      const latest = extracted.at(-1);
+      userDecks = [...imported, ...userDecks];
+      const latest = imported.at(-1);
       if (latest) {
-        selectedPlayerDeckId = uploadedDeckKey(latest.id);
+        selectedPlayerDeckId = userDeckChoiceKey(latest.id);
       }
     } catch (error) {
       uploadError = error instanceof Error ? error.message : String(error);
@@ -594,14 +656,23 @@
     }
   }
 
-  function deleteUploadedDeck(id: string) {
-    uploadedDecks = uploadedDecks.filter((deck) => deck.id !== id);
-    saveUploadedDecks(uploadedDecks);
-    if (selectedPlayerDeckId === uploadedDeckKey(id)) {
-      selectedPlayerDeckId = availableDeckChoiceKeys()[0] ?? '';
+  async function deleteSharedUserDeck(id: string) {
+    const deck = userDecks.find((item) => item.id === id);
+    if (!deck) {
+      return;
     }
-    if (selectedOpponentDeckId === uploadedDeckKey(id)) {
-      selectedOpponentDeckId = availableDeckChoiceKeys().find((key) => key !== selectedPlayerDeckId) ?? availableDeckChoiceKeys()[0] ?? '';
+    uploadBusy = true;
+    uploadError = '';
+    try {
+      await deleteUserDeck(deck);
+      userDecks = userDecks.filter((item) => item.id !== id);
+      if (selectedPlayerDeckId === userDeckChoiceKey(id)) {
+        selectedPlayerDeckId = availablePlayerDeckChoiceKeys()[0] ?? '';
+      }
+    } catch (error) {
+      uploadError = error instanceof Error ? error.message : String(error);
+    } finally {
+      uploadBusy = false;
     }
   }
 
@@ -1601,13 +1672,13 @@
         {agents}
         {gameLogs}
         {roundRobinDeckCatalog}
-        {uploadedDecks}
+        {userDecks}
         busy={sessionBusy}
         {catalogBusy}
-        {uploadBusy}
+        uploadBusy={uploadBusy || userDeckBusy}
         {error}
         {catalogError}
-        {uploadError}
+        uploadError={uploadError || userDeckError}
         setHomeMode={(nextMode) => {
           homeMode = nextMode;
           if (nextMode === 'logs') {
@@ -1618,9 +1689,12 @@
         }}
         startGame={startGame}
         {uploadDeckFiles}
-        {deleteUploadedDeck}
+        deleteUserDeck={(id) => void deleteSharedUserDeck(id)}
         {loadGameLog}
-        refreshCatalog={() => void refreshCatalog()}
+        refreshCatalog={() => {
+          void refreshCatalog();
+          void refreshUserDecks();
+        }}
       />
   {:else if bottomPlayer && topPlayer}
     <TableShell {debugZones} {replayMode}>
