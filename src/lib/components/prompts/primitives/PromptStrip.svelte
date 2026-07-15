@@ -117,4 +117,33 @@
     font-size: 12px;
     font-weight: 700;
   }
+
+  @media (max-width: 640px) {
+    .prompt-strip {
+      width: calc(100vw - 16px);
+      max-width: calc(100vw - 16px);
+      flex-wrap: wrap;
+      gap: 7px 9px;
+      padding: 8px 10px;
+    }
+
+    .prompt-strip-text {
+      flex: 1 1 180px;
+    }
+
+    .prompt-strip-meta {
+      margin-left: auto;
+    }
+
+    .prompt-strip-actions {
+      flex: 1 0 100%;
+      justify-content: flex-end;
+    }
+
+    .prompt-strip-actions :global(button) {
+      min-height: 36px;
+      padding: 7px 11px;
+      touch-action: manipulation;
+    }
+  }
 </style>

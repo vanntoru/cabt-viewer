@@ -7,6 +7,7 @@
     assigned?: boolean;
     disabled?: boolean;
     title?: string;
+    ariaLabel?: string;
     draggable?: boolean;
     children: Snippet;
     label?: Snippet;
@@ -20,6 +21,7 @@
     assigned = false,
     disabled = false,
     title,
+    ariaLabel,
     draggable = false,
     children,
     label,
@@ -36,6 +38,7 @@
   class:assigned
   {disabled}
   {title}
+  aria-label={ariaLabel}
   {draggable}
   {onclick}
   {ondragstart}

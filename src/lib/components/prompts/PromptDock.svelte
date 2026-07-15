@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
 
   type Props = {
-    mode?: 'default' | 'search' | 'attachEnergy';
+    mode?: 'default' | 'search' | 'attachEnergy' | 'boardChoice';
     children: Snippet;
   };
 
@@ -13,6 +13,7 @@
   class="prompt-dock"
   class:search-prompt-dock={mode === 'search'}
   class:attach-energy-prompt-dock={mode === 'attachEnergy'}
+  class:board-choice-prompt-dock={mode === 'boardChoice'}
 >
   {@render children()}
 </div>
@@ -42,10 +43,31 @@
     transform: translateX(-50%);
   }
 
+  .prompt-dock.board-choice-prompt-dock {
+    width: min(760px, calc(100vw - 220px));
+    max-height: min(82vh, 760px);
+  }
+
   .prompt-dock:has(:global(.prompt-panel-collapsed)) {
     left: calc((100vw - var(--board-right-rail)) / 2);
     top: calc(var(--board-top-inset) + 48px);
     width: max-content;
     transform: translate(-50%, -50%);
+  }
+
+  @media (max-width: 640px) {
+    .prompt-dock,
+    .prompt-dock.search-prompt-dock {
+      left: 50%;
+      width: calc(100vw - 16px);
+    }
+
+    .prompt-dock.attach-energy-prompt-dock {
+      width: calc(100vw - 16px);
+    }
+
+    .prompt-dock.board-choice-prompt-dock {
+      width: calc(100vw - 16px);
+    }
   }
 </style>

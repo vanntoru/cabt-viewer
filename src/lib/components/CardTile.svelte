@@ -1,5 +1,6 @@
 	<script lang="ts">
 	  import type { CardView } from '../game/types';
+	  import { shouldSuppressCardPreview } from '../game/cardPreviewPolicy';
 	  import { cardPreviewStore } from '../../state/cardPreview.svelte';
 
   type Props = {
@@ -64,14 +65,20 @@
 	    event.preventDefault();
 	  }
 
-	  function suppressTouchLandscapePreview() {
-	    return typeof window !== 'undefined'
-	      && window.matchMedia('(pointer: coarse) and (orientation: landscape)').matches;
+	  function suppressTouchPreview() {
+	    if (typeof window === 'undefined') {
+	      return false;
+	    }
+	    return shouldSuppressCardPreview({
+	      interactive,
+	      coarsePointer: window.matchMedia('(pointer: coarse)').matches,
+	      landscape: window.matchMedia('(orientation: landscape)').matches,
+	    });
 	  }
 
 	  function handleTileClick(event: MouseEvent) {
 	    onclick?.(event);
-	    if (!canPreview || event.defaultPrevented || suppressTouchLandscapePreview()) {
+	    if (!canPreview || event.defaultPrevented || suppressTouchPreview()) {
 	      return;
 	    }
 	    event.preventDefault();

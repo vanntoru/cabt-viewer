@@ -1,5 +1,6 @@
 import type { GameCommandApi } from './gameApi';
 import type { CardTarget, EngineResponse } from './types';
+import { clearActiveSessionPointer, writeActiveSessionPointer } from './activeMatchCheckpoint';
 
 type Command = {
   type: string;
@@ -11,14 +12,15 @@ type AvailableActionsScope = 'none' | 'active' | 'full';
 
 let currentSessionId = '';
 
-async function send(command: Command): Promise<EngineResponse> {
-  const commandWithSession = command.type === 'startGame' || !currentSessionId
+async function send(command: Command, sessionIdOverride = ''): Promise<EngineResponse> {
+  const sessionId = sessionIdOverride || currentSessionId;
+  const commandWithSession = command.type === 'startGame' || !sessionId
     ? command
     : {
         ...command,
         payload: {
           ...(command.payload && typeof command.payload === 'object' ? command.payload : {}),
-          sessionId: currentSessionId,
+          sessionId,
         },
       };
   const response = await fetch('/local-engine', {
@@ -31,6 +33,7 @@ async function send(command: Command): Promise<EngineResponse> {
   const body = await response.json() as EngineResponse;
   if (body.ok && body.sessionId) {
     currentSessionId = body.sessionId;
+    writeActiveSessionPointer(body.sessionId);
   } else if (!body.ok && body.error.includes('session')) {
     currentSessionId = '';
   }
@@ -64,6 +67,10 @@ function hostedAvailableActionsOptions(command: Command): { availableActionsScop
 export const localGameApi: GameCommandApi & {
   start(player1Deck: string[], player2Deck: string[], agentId?: string): Promise<EngineResponse>;
   state(): Promise<EngineResponse>;
+  resume(sessionId: string): Promise<EngineResponse>;
+  closeSession(sessionId?: string): Promise<EngineResponse | null>;
+  currentSessionId(): string;
+  forgetSession(): void;
 } = {
   start(player1Deck: string[], player2Deck: string[], agentId?: string) {
     return send({
@@ -77,6 +84,31 @@ export const localGameApi: GameCommandApi & {
 
   state() {
     return send({ type: 'state' });
+  },
+
+  resume(sessionId: string) {
+    return send({ type: 'state' }, sessionId);
+  },
+
+  async closeSession(sessionId = currentSessionId) {
+    if (!sessionId) {
+      return null;
+    }
+    try {
+      return await send({ type: 'closeGame' }, sessionId);
+    } finally {
+      currentSessionId = '';
+      clearActiveSessionPointer();
+    }
+  },
+
+  currentSessionId() {
+    return currentSessionId;
+  },
+
+  forgetSession() {
+    currentSessionId = '';
+    clearActiveSessionPointer();
   },
 
   playCard(playerIndex: number, handIndex: number, target: CardTarget) {

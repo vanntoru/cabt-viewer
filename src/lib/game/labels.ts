@@ -2,6 +2,7 @@ const knownLabels: Record<string, string> = {
   AlertPrompt: '通知',
   AttachEnergyPrompt: 'エネルギーをつける',
   ChooseAttackPrompt: 'ワザを選ぶ',
+  CabtBoardChoicePrompt: '場のポケモンを選ぶ',
   ChooseCardsPrompt: 'カードを選ぶ',
   ChooseEnergyPrompt: 'エネルギーを選ぶ',
   ChoosePokemonPrompt: 'ポケモンを選ぶ',

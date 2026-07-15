@@ -622,6 +622,38 @@ function buildPrompts(observation: CabtObservation, activePlayerIndex: number, d
       },
     ];
   }
+  const boardChoices = cabtBoardChoiceDescriptors(observation, activePlayerIndex);
+  if (boardChoices) {
+    return [
+      {
+        id,
+        className: 'CabtBoardChoicePrompt',
+        type: 'cabt-board-choice',
+        playerId: activePlayerIndex,
+        playerIndex: activePlayerIndex,
+        supported: true,
+        message: cabtSelectLabel(select.context),
+        resultSchema: 'optionIndexes',
+        fields: {
+          boardChoices,
+          cardList: select.option.map((option, optionIndex) => {
+            const optionCard = cardForOption(option, observation, optionIndex);
+            const view = optionCard ? cardToView(optionCard, dataMaps) : {
+              name: optionLabel(option, dataMaps, observation, select.context),
+              fullName: optionLabel(option, dataMaps, observation, select.context),
+            };
+            return {
+              ...view,
+              index: optionIndex,
+            };
+          }),
+          selectionKind: cabtBoardSelectionKind(select.context),
+          options: promptSelectionOptions(select),
+          cabtSelect: select,
+        },
+      },
+    ];
+  }
   if (isCardSelectionPrompt(observation)) {
     return [
       {
@@ -668,6 +700,83 @@ function buildPrompts(observation: CabtObservation, activePlayerIndex: number, d
       },
     },
   ];
+}
+
+const CABT_BOARD_CHOICE_CONTEXTS = new Set<number>([
+  CabtSelectContext.ATTACH_FROM,
+  CabtSelectContext.ATTACH_TO,
+  CabtSelectContext.DETACH_FROM,
+  CabtSelectContext.DISCARD_ENERGY_CARD,
+  CabtSelectContext.DISCARD_CARD_OR_ATTACHED_CARD,
+  CabtSelectContext.DISCARD_ENERGY,
+  CabtSelectContext.TO_HAND_ENERGY,
+  CabtSelectContext.TO_DECK_ENERGY,
+  CabtSelectContext.SWITCH_ENERGY_CARD,
+  CabtSelectContext.SWITCH_ENERGY,
+]);
+
+function cabtBoardChoiceDescriptors(observation: CabtObservation, activePlayerIndex: number) {
+  const select = observation.select;
+  const current = observation.current;
+  if (!select || !current || !select.option.length || !CABT_BOARD_CHOICE_CONTEXTS.has(select.context)) {
+    return null;
+  }
+
+  const choices = select.option.map((option, optionIndex) => {
+    const boardTarget = targetForCabtBoardArea(
+      activePlayerIndex,
+      option.playerIndex ?? current.yourIndex,
+      option.area,
+      option.index,
+    );
+    const inPlayTarget = targetForCabtBoardArea(
+      activePlayerIndex,
+      option.playerIndex ?? current.yourIndex,
+      option.inPlayArea,
+      option.inPlayIndex,
+    );
+    const areaIsDestination = select.context === CabtSelectContext.ATTACH_TO;
+    const sourceTarget = areaIsDestination ? null : boardTarget;
+    const destinationTarget = inPlayTarget ?? (areaIsDestination ? boardTarget : null);
+    if (!sourceTarget && !destinationTarget) {
+      return null;
+    }
+    return {
+      index: optionIndex,
+      sourceTarget: sourceTarget ?? undefined,
+      destinationTarget: destinationTarget ?? undefined,
+      energyIndex: typeof option.energyIndex === 'number' ? option.energyIndex : undefined,
+    };
+  });
+
+  return choices.every((choice) => choice !== null) ? choices : null;
+}
+
+function targetForCabtBoardArea(
+  actorIndex: number,
+  ownerIndex: number,
+  area: number | null | undefined,
+  index: number | null | undefined,
+): CardTarget | null {
+  if (typeof index !== 'number') {
+    return null;
+  }
+  if (area === CabtAreaType.ACTIVE) {
+    return targetFor(actorIndex, ownerIndex, SlotType.ACTIVE, index);
+  }
+  if (area === CabtAreaType.BENCH) {
+    return targetFor(actorIndex, ownerIndex, SlotType.BENCH, index);
+  }
+  return null;
+}
+
+function cabtBoardSelectionKind(context: number) {
+  if (context === CabtSelectContext.ATTACH_TO) return 'attach-destination';
+  if (context === CabtSelectContext.SWITCH_ENERGY_CARD || context === CabtSelectContext.SWITCH_ENERGY) return 'move-energy';
+  if (context === CabtSelectContext.DISCARD_ENERGY_CARD || context === CabtSelectContext.DISCARD_ENERGY) return 'discard-energy';
+  if (context === CabtSelectContext.TO_HAND_ENERGY) return 'energy-to-hand';
+  if (context === CabtSelectContext.TO_DECK_ENERGY) return 'energy-to-deck';
+  return 'attachment-source';
 }
 
 function promptSelectionOptions(select: CabtSelectData) {
@@ -771,6 +880,11 @@ function promptIdForSelect(select: NonNullable<CabtObservation['select']>) {
       option.area,
       option.index,
       option.playerIndex,
+      option.toolIndex,
+      option.energyIndex,
+      option.count,
+      option.inPlayArea,
+      option.inPlayIndex,
       option.attackId,
       option.cardId,
       option.serial,
@@ -937,6 +1051,7 @@ function cabtSelectLabel(context: number) {
     [CabtSelectContext.DAMAGE_COUNTER]: 'Place damage counters',
     [CabtSelectContext.DAMAGE_COUNTER_ANY]: 'Place damage counters',
     [CabtSelectContext.DISCARD_ENERGY_CARD]: 'Choose energy to discard',
+    [CabtSelectContext.SWITCH_ENERGY_CARD]: 'Choose energy to move',
     [CabtSelectContext.DISCARD_ENERGY]: 'Choose energy to discard',
     [CabtSelectContext.TO_HAND_ENERGY]: 'Choose energy for your hand',
     [CabtSelectContext.TO_DECK_ENERGY]: 'Choose energy for deck',

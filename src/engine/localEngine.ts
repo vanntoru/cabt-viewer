@@ -104,6 +104,11 @@ export class LocalEngineController {
           return await this.rewindTo(command.payload);
         case 'state':
           return this.viewResponse();
+        case 'closeGame': {
+          const response = this.viewResponse();
+          this.close();
+          return response;
+        }
         case 'playCard':
           return await this.selectMatchingOption((option) => this.matchesPlayCardOption(option, command.payload));
         case 'attack':

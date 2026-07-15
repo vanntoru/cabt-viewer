@@ -4,6 +4,45 @@ import { SlotType, targetFor } from '../lib/game/types';
 import { CabtAreaType, CabtOptionType, CabtSelectContext } from '../lib/cabt/types';
 
 describe('LocalEngineController', () => {
+  it('closes the one active session when requested with the matching id', async () => {
+    const previousEngineMode = process.env.CABT_ENGINE_MODE;
+    delete process.env.CABT_ENGINE_MODE;
+    const engine = new LocalEngineController() as any;
+    let bridgeClosed = false;
+    engine.sessionId = 'test-session';
+    engine.viewResponse = () => ({
+      ok: true,
+      sessionId: engine.sessionId,
+      view: {
+        ready: true,
+        phase: 1,
+        phaseLabel: 'play',
+        turn: 1,
+        activePlayerIndex: 0,
+        players: [],
+        prompts: [],
+        logs: [],
+        events: [],
+      },
+    });
+    engine.bridge = {
+      close: () => {
+        bridgeClosed = true;
+      },
+    };
+
+    try {
+      const response = await engine.handle({ type: 'closeGame', payload: { sessionId: 'test-session' } });
+
+      expect(response.ok).toBe(true);
+      expect(response.sessionId).toBe('test-session');
+      expect(bridgeClosed).toBe(true);
+      expect(engine.sessionId).toBe('');
+    } finally {
+      process.env.CABT_ENGINE_MODE = previousEngineMode;
+    }
+  });
+
   process.env.CABT_ENGINE_MODE = 'demo';
 
   it('starts a CABT-shaped demo game and exposes a playable view', async () => {

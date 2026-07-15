@@ -179,9 +179,176 @@ describe('cabtObservationToGameView', () => {
     const view = cabtObservationToGameView(observation, [], dataMaps);
     const prompt = view.prompts[0];
 
+    expect(prompt?.className).toBe('CabtBoardChoicePrompt');
     expect(prompt?.message).toBe('Choose energy to discard');
+    expect(prompt?.fields.boardChoices).toEqual([
+      {
+        index: 0,
+        sourceTarget: targetFor(0, 0, SlotType.ACTIVE, 0),
+        destinationTarget: undefined,
+        energyIndex: 0,
+      },
+    ]);
     expect(prompt?.fields.cardList).toEqual([
       expect.objectContaining({ name: 'Basic {G} Energy', energyType: 1 }),
+    ]);
+  });
+
+  it('keeps the source Pokemon, board position, energy, and destination for CABT energy moves', () => {
+    const dataMaps: CabtDataMaps = {
+      cardData: {
+        1: {
+          cardId: 1,
+          name: 'Basic Energy',
+          cardType: CabtCardType.BASIC_ENERGY,
+          energyType: 1,
+        },
+        101: { cardId: 101, name: 'Source Pokemon', cardType: CabtCardType.POKEMON, basic: true, hp: 100 },
+        102: { cardId: 102, name: 'First Bench Pokemon', cardType: CabtCardType.POKEMON, basic: true, hp: 100 },
+        103: { cardId: 103, name: 'Destination Pokemon', cardType: CabtCardType.POKEMON, basic: true, hp: 100 },
+      },
+      attacks: {},
+    };
+    const observation = {
+      select: {
+        type: CabtSelectType.ATTACHED_CARD,
+        context: CabtSelectContext.SWITCH_ENERGY_CARD,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [
+          {
+            type: CabtOptionType.ENERGY_CARD,
+            area: CabtAreaType.ACTIVE,
+            index: 0,
+            energyIndex: 0,
+            inPlayArea: CabtAreaType.BENCH,
+            inPlayIndex: 1,
+            playerIndex: 0,
+          },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+      logs: [],
+      current: {
+        turn: 2,
+        turnActionCount: 1,
+        yourIndex: 0,
+        firstPlayer: 0,
+        supporterPlayed: false,
+        stadiumPlayed: false,
+        energyAttached: true,
+        retreated: false,
+        result: -1,
+        stadium: [],
+        looking: null,
+        players: [
+          {
+            ...player(),
+            active: [{
+              id: 101,
+              hp: 100,
+              maxHp: 100,
+              appearThisTurn: false,
+              energies: [1],
+              energyCards: [{ id: 1, serial: 40, playerIndex: 0 }],
+              tools: [],
+              preEvolution: [],
+            }],
+            bench: [
+              { id: 102, hp: 100, maxHp: 100, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] },
+              { id: 103, hp: 100, maxHp: 100, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] },
+            ],
+          },
+          player(),
+        ],
+      },
+    } satisfies CabtObservation;
+
+    const view = cabtObservationToGameView(observation, [], dataMaps);
+    const prompt = view.prompts[0];
+
+    expect(prompt?.className).toBe('CabtBoardChoicePrompt');
+    expect(prompt?.fields.selectionKind).toBe('move-energy');
+    expect(prompt?.fields.boardChoices).toEqual([
+      {
+        index: 0,
+        sourceTarget: targetFor(0, 0, SlotType.ACTIVE, 0),
+        destinationTarget: targetFor(0, 0, SlotType.BENCH, 1),
+        energyIndex: 0,
+      },
+    ]);
+  });
+
+  it('keeps battle and Bench positions when CABT asks for an attachment destination', () => {
+    const dataMaps: CabtDataMaps = {
+      cardData: {
+        201: { cardId: 201, name: 'Active Pokemon', cardType: CabtCardType.POKEMON, basic: true, hp: 100 },
+        202: { cardId: 202, name: 'Bench Pokemon', cardType: CabtCardType.POKEMON, basic: true, hp: 100 },
+      },
+      attacks: {},
+    };
+    const observation = {
+      select: {
+        type: CabtSelectType.CARD,
+        context: CabtSelectContext.ATTACH_TO,
+        minCount: 1,
+        maxCount: 1,
+        remainDamageCounter: 0,
+        remainEnergyCost: 0,
+        option: [
+          { type: CabtOptionType.CARD, area: CabtAreaType.ACTIVE, index: 0, playerIndex: 0 },
+          { type: CabtOptionType.CARD, area: CabtAreaType.BENCH, index: 0, playerIndex: 0 },
+        ],
+        deck: null,
+        contextCard: null,
+        effect: null,
+      },
+      logs: [],
+      current: {
+        turn: 2,
+        turnActionCount: 1,
+        yourIndex: 0,
+        firstPlayer: 0,
+        supporterPlayed: false,
+        stadiumPlayed: false,
+        energyAttached: true,
+        retreated: false,
+        result: -1,
+        stadium: [],
+        looking: null,
+        players: [
+          {
+            ...player(),
+            active: [{ id: 201, hp: 100, maxHp: 100, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] }],
+            bench: [{ id: 202, hp: 100, maxHp: 100, appearThisTurn: false, energies: [], energyCards: [], tools: [], preEvolution: [] }],
+          },
+          player(),
+        ],
+      },
+    } satisfies CabtObservation;
+
+    const view = cabtObservationToGameView(observation, [], dataMaps);
+    const prompt = view.prompts[0];
+
+    expect(prompt?.className).toBe('CabtBoardChoicePrompt');
+    expect(prompt?.fields.selectionKind).toBe('attach-destination');
+    expect(prompt?.fields.boardChoices).toEqual([
+      {
+        index: 0,
+        sourceTarget: undefined,
+        destinationTarget: targetFor(0, 0, SlotType.ACTIVE, 0),
+        energyIndex: undefined,
+      },
+      {
+        index: 1,
+        sourceTarget: undefined,
+        destinationTarget: targetFor(0, 0, SlotType.BENCH, 0),
+        energyIndex: undefined,
+      },
     ]);
   });
 

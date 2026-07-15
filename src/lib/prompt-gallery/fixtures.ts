@@ -1,6 +1,6 @@
 import { PlayerType, SlotType, targetFor, type CardView, type GameView, type PlayerView, type PokemonSlotView, type PromptView } from '../game/types';
 
-export type PromptDockMode = 'default' | 'search' | 'attachEnergy';
+export type PromptDockMode = 'default' | 'search' | 'attachEnergy' | 'boardChoice';
 
 export type PromptGalleryDemo = {
   key: string;
@@ -17,6 +17,7 @@ export type BoardPromptGalleryDemo = PromptGalleryDemo & {
 export const PROMPT_GALLERY_CLASS_NAMES = [
   'AlertPrompt',
   'AttachEnergyPrompt',
+  'CabtBoardChoicePrompt',
   'ChooseAttackPrompt',
   'ChooseCardsPrompt',
   'ChooseEnergyPrompt',
@@ -183,6 +184,35 @@ export const dockPromptDemos: PromptGalleryDemo[] = [
   demo('move-energy', 'Move energy', 'Source and destination target picker.', 'MoveEnergyPrompt', {
     message: 'Move an attached energy',
     fields: targetFields({ playerType: PlayerType.ANY, options: { min: 1, max: 1, allowCancel: true } }),
+  }),
+  demo('cabt-move-energy', 'CABT move energy', 'Actual live-battle energy move choices with board positions.', 'CabtBoardChoicePrompt', {
+    message: 'Choose energy to move',
+    mode: 'boardChoice',
+    resultSchema: 'optionIndexes',
+    fields: {
+      boardChoices: [
+        {
+          index: 0,
+          sourceTarget: targetFor(0, 0, SlotType.ACTIVE),
+          destinationTarget: targetFor(0, 0, SlotType.BENCH, 0),
+          energyIndex: 0,
+        },
+        {
+          index: 1,
+          sourceTarget: targetFor(0, 0, SlotType.ACTIVE),
+          destinationTarget: targetFor(0, 0, SlotType.BENCH, 1),
+          energyIndex: 1,
+        },
+        {
+          index: 2,
+          sourceTarget: targetFor(0, 0, SlotType.BENCH, 0),
+          destinationTarget: targetFor(0, 0, SlotType.ACTIVE),
+          energyIndex: 0,
+        },
+      ],
+      selectionKind: 'move-energy',
+      options: { min: 1, max: 1, allowCancel: true },
+    },
   }),
   demo('shuffle-deck', 'Shuffle deck', 'Shuffle/order shell with listed cards.', 'ShuffleDeckPrompt', {
     message: 'Shuffle these cards into deck',

@@ -2,6 +2,7 @@
   import AlertLikePrompt from './AlertLikePrompt.svelte';
   import AttachEnergyPrompt from './AttachEnergyPrompt.svelte';
   import CardListPrompt from './CardListPrompt.svelte';
+  import CabtBoardChoicePrompt from './CabtBoardChoicePrompt.svelte';
   import ChooseAttackPrompt from './ChooseAttackPrompt.svelte';
   import ChooseCardsPrompt from './ChooseCardsPrompt.svelte';
   import ChooseEnergyPrompt from './ChooseEnergyPrompt.svelte';
@@ -66,6 +67,8 @@
   <SelectPrompt {prompt} {resolving} {onresolve} />
 {:else if prompt.className === 'ChooseAttackPrompt'}
   <ChooseAttackPrompt {prompt} {resolving} {onresolve} />
+{:else if prompt.className === 'CabtBoardChoicePrompt'}
+  <CabtBoardChoicePrompt {game} {prompt} {resolving} {onresolve} />
 {:else if prompt.className === 'ChooseCardsPrompt'}
   <ChooseCardsPrompt {prompt} {resolving} {onresolve} />
 {:else if prompt.className === 'ChoosePrizePrompt'}
@@ -146,14 +149,6 @@
     max-height: min(52vh, 560px);
     overflow: auto;
     padding: 10px 12px 14px;
-  }
-
-  :global(.prize-prompt-grid) {
-    display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
-    gap: clamp(10px, 1.2vw, 16px);
-    align-items: start;
-    min-width: 0;
   }
 
   :global(.mulligan-slider) {

@@ -86,6 +86,8 @@
         selected={selectedIndexes.includes(prize.index)}
         blocked={!isIndexSelectable(prize.index)}
         disabled={resolving || !isIndexSelectable(prize.index)}
+        ariaLabel={`サイド ${prize.index + 1}`}
+        title={`サイド ${prize.index + 1}`}
         onclick={() => toggleIndex(prize.index)}
       >
         {#if prize.cards?.[0]}
@@ -106,3 +108,20 @@
     </button>
   {/snippet}
 </PromptPanel>
+
+<style>
+  .prize-prompt-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: clamp(10px, 1.2vw, 16px);
+    align-items: start;
+    min-width: 0;
+  }
+
+  @media (max-width: 640px) {
+    .prize-prompt-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+  }
+</style>

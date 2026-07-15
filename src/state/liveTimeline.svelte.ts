@@ -1,6 +1,7 @@
 import { buildReplayQuestionPrompt } from '../lib/game/replayQuestionCopy';
 import type { ReplaySnapshot, ReplayStep } from '../lib/game/replay';
 import type { GameView, LogView } from '../lib/game/types';
+import type { LiveTimelineCheckpoint } from '../lib/game/activeMatchCheckpoint';
 import cardNamesJa from '../lib/cabt/cardNamesJa.generated.json';
 import attackNamesJa from '../lib/cabt/attackNamesJa.generated.json';
 
@@ -47,6 +48,58 @@ class LiveTimelineStore {
     this.questionContextText = '';
     this.accumulatedLogs = [];
     this.lastSignature = '';
+    this.nextTurnTargets = new Map();
+    this.nextTurnTargetStepCount = 0;
+  }
+
+  checkpoint(): LiveTimelineCheckpoint {
+    return {
+      replay: this.replay,
+      stepIndex: this.stepIndex,
+    };
+  }
+
+  restore(checkpoint: LiveTimelineCheckpoint): void {
+    this.reset();
+    const replay = checkpoint.replay;
+    if (!replay?.views.length || !replay.steps.length) {
+      return;
+    }
+    this.replay = replay;
+    this.stepIndex = clampIndex(checkpoint.stepIndex, this.maxStepIndex);
+    const latestView = replay.views.at(-1);
+    this.accumulatedLogs = [...(latestView?.logs ?? [])];
+    this.lastSignature = latestView ? viewSignature(latestView) : '';
+  }
+
+  replaceLatestView(view: GameView): void {
+    const replay = this.replay;
+    const latestStepIndex = (replay?.steps.length ?? 0) - 1;
+    const latestStep = replay?.steps[latestStepIndex];
+    if (!replay || !latestStep || latestStepIndex < 0) {
+      this.capture(view);
+      return;
+    }
+    const views = [...replay.views];
+    views[latestStep.stateIndex] = view;
+    const steps = [...replay.steps];
+    steps[latestStepIndex] = {
+      ...latestStep,
+      liveHistoryLength: view.liveHistoryLength,
+      payload: {
+        ...(latestStep.payload && typeof latestStep.payload === 'object' ? latestStep.payload : {}),
+        liveHistoryLength: view.liveHistoryLength,
+      },
+    };
+    this.replay = {
+      ...replay,
+      views,
+      steps,
+      winner: view.winner ?? -1,
+      turnCount: Math.max(...views.map((item) => item.turn), 0),
+    };
+    this.accumulatedLogs = [...(view.logs ?? [])];
+    this.lastSignature = viewSignature(view);
     this.nextTurnTargets = new Map();
     this.nextTurnTargetStepCount = 0;
   }

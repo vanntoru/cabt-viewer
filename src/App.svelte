@@ -23,6 +23,11 @@
   import ZoneViewer from './lib/components/ZoneViewer.svelte';
   import type { GameCommandApi } from './lib/game/gameApi';
   import { localGameApi } from './lib/game/httpClient';
+  import {
+    activeMatchCheckpointRepository,
+    readActiveSessionPointer,
+    type ActiveMatchCheckpointV1,
+  } from './lib/game/activeMatchCheckpoint';
   import { resolveCardImageUrl } from './lib/game/cardImages';
   import { formatCanonicalDeckList } from './lib/game/deckImport';
   import {
@@ -128,6 +133,7 @@
     cardId?: number;
     serial?: number;
   };
+  type ActiveMatchRestoreState = 'checking' | 'ready' | 'reconnecting' | 'invalid';
 
   let showPromptGallery = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'prompt-gallery';
   const initialReplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('view') === 'replay';
@@ -150,18 +156,31 @@
   let userDeckError = $state('');
   let knownDecksByPlayer = $state<Record<number, KnownDeckMemory>>({});
   let appliedKnownDeckLogKeys = $state<string[]>([]);
+  let activeMatchRestoreState = $state<ActiveMatchRestoreState>(
+    initialReplayMode || showPromptGallery ? 'ready' : 'checking',
+  );
+  let activeMatchRestoreMessage = $state('');
+  let checkpointSaveError = $state('');
+  let restoredCheckpoint: ActiveMatchCheckpointV1 | null = null;
+  let checkpointSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  let checkpointWriteChain = Promise.resolve();
+  let restoreRequestInFlight = false;
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
   let liveTimelineMode = $derived(!replayMode && !!liveTimelineStore.replay);
   let liveTimelineBrowsingPast = $derived(liveTimelineMode && liveTimelineStore.isBrowsingPast);
   let game = $derived(replayMode ? replayStore.currentView : (liveTimelineStore.currentView ?? gameStore.game));
   let error = $derived(homeMode === 'logs' ? replayStore.error : gameStore.error);
   let busy = $derived(replayMode ? replayStore.loading : gameStore.busy);
-  let sessionBusy = $derived(replayMode ? replayStore.loading : (busy || liveTimelineBrowsingPast));
+  let sessionBusy = $derived(
+    replayMode ? replayStore.loading : (busy || liveTimelineBrowsingPast || activeMatchRestoreState === 'reconnecting'),
+  );
   let commandApi = $derived<GameCommandApi>(localGameApi);
   let resolvingPrompt = $derived(gameStore.resolvingPrompt);
   let promptInputSuppressed = $state(false);
   let promptInputSuppressTimer: ReturnType<typeof setTimeout> | null = null;
-  let promptResolvingBlocked = $derived(resolvingPrompt || promptInputSuppressed);
+  let promptResolvingBlocked = $derived(
+    resolvingPrompt || promptInputSuppressed || activeMatchRestoreState === 'reconnecting',
+  );
   let selectedHand = $derived(selectionStore.selectedHand);
   let draggingHand = $derived(selectionStore.draggingHand);
   let focusedSlot = $derived(selectionStore.focusedSlot);
@@ -184,16 +203,24 @@
   let workbenchReturnUrl = $derived(resolveWorkbenchReturnUrl());
   onMount(() => {
     const stopThemeSync = viewSettingsStore.startThemeSync();
-    void refreshCatalog();
-    void refreshUserDecks();
-    if (initialReplayMode) {
-      void replayStore.loadSaved();
-    }
-    return stopThemeSync;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && activeMatchRestoreState === 'reconnecting') {
+        void retryActiveMatchRestore();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    void initializeApp();
+    return () => {
+      stopThemeSync();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   });
   onDestroy(() => {
     if (promptInputSuppressTimer) {
       clearTimeout(promptInputSuppressTimer);
+    }
+    if (checkpointSaveTimer) {
+      clearTimeout(checkpointSaveTimer);
     }
   });
   $effect(() => {
@@ -420,9 +447,11 @@
           ? '試合終了'
           : '',
   );
-  let currentPromptDockMode = $derived<'default' | 'search' | 'attachEnergy'>(
+  let currentPromptDockMode = $derived<'default' | 'search' | 'attachEnergy' | 'boardChoice'>(
     currentPrompt?.className === 'ChooseCardsPrompt'
       ? 'search'
+      : currentPrompt?.className === 'CabtBoardChoicePrompt'
+        ? 'boardChoice'
       : currentPrompt?.className === 'AttachEnergyPrompt'
         ? 'attachEnergy'
         : 'default',
@@ -496,10 +525,208 @@
     rememberVisibleDecks(game, currentPrompt);
   });
   $effect(() => {
-    if (promptLifecycleStore.shouldAutoConfirm(currentPrompt, autoResolvePrompt, resolvingPrompt)) {
+    if (activeMatchRestoreState === 'ready'
+      && promptLifecycleStore.shouldAutoConfirm(currentPrompt, autoResolvePrompt, resolvingPrompt)) {
       void resolvePrompt(autoResolvePromptResult);
     }
   });
+  $effect(() => {
+    const currentGame = gameStore.game;
+    const sessionId = localGameApi.currentSessionId();
+    const timeline = liveTimelineStore.checkpoint();
+    const knownDecks = knownDecksByPlayer;
+    const appliedLogKeys = appliedKnownDeckLogKeys;
+    const playerDeckId = selectedPlayerDeckId;
+    const opponentDeckId = selectedOpponentDeckId;
+    const agentId = selectedAgentId;
+    if (replayMode || activeMatchRestoreState !== 'ready' || !currentGame || !sessionId) {
+      return;
+    }
+    scheduleActiveMatchCheckpointSave({
+      version: 1,
+      sessionId,
+      savedAt: new Date().toISOString(),
+      finished: currentGame.phase === 7,
+      game: currentGame,
+      timeline,
+      knownDecksByPlayer: knownDecks,
+      appliedKnownDeckLogKeys: appliedLogKeys,
+      selection: { playerDeckId, opponentDeckId, agentId },
+    });
+  });
+
+  async function initializeApp() {
+    const catalogPromise = Promise.all([refreshCatalog(), refreshUserDecks()]);
+    if (initialReplayMode) {
+      await Promise.all([catalogPromise, replayStore.loadSaved()]);
+      return;
+    }
+    if (showPromptGallery) {
+      await catalogPromise;
+      return;
+    }
+
+    let checkpoint: ActiveMatchCheckpointV1 | null = null;
+    try {
+      checkpoint = await activeMatchCheckpointRepository.load();
+    } catch {
+      // A localStorage session pointer can still recover the current server state.
+    }
+    restoredCheckpoint = checkpoint;
+    const sessionId = checkpoint?.sessionId ?? readActiveSessionPointer()?.sessionId ?? '';
+    if (sessionId) {
+      await restoreActiveMatch(sessionId, checkpoint);
+    } else {
+      activeMatchRestoreState = 'ready';
+    }
+
+    await catalogPromise;
+    if (checkpoint) {
+      applyCheckpointSelection(checkpoint);
+    }
+  }
+
+  async function restoreActiveMatch(sessionId: string, checkpoint: ActiveMatchCheckpointV1 | null) {
+    if (restoreRequestInFlight) {
+      return;
+    }
+    restoreRequestInFlight = true;
+    if (!gameStore.game) {
+      activeMatchRestoreState = 'checking';
+    }
+    activeMatchRestoreMessage = '保存された対戦へ接続しています。';
+    try {
+      const response = await localGameApi.resume(sessionId);
+      if (!response.ok) {
+        gameSessionStore.reset();
+        activeMatchRestoreState = 'invalid';
+        activeMatchRestoreMessage = '以前の対戦セッションは終了しているため再開できません。';
+        return;
+      }
+
+      if (checkpoint) {
+        applyCheckpointClientState(checkpoint);
+      } else {
+        liveTimelineStore.reset();
+        knownDecksByPlayer = {};
+        appliedKnownDeckLogKeys = [];
+      }
+      gameStore.apply(response);
+      if (checkpoint?.timeline.replay) {
+        liveTimelineStore.replaceLatestView(response.view);
+        syncRestoredPrompt(response.view);
+      } else {
+        gameSessionStore.syncExternalUpdate();
+      }
+      replayStore.clear();
+      homeMode = 'play';
+      activeMatchRestoreState = 'ready';
+      activeMatchRestoreMessage = '';
+      checkpointSaveError = '';
+    } catch (restoreError) {
+      if (checkpoint) {
+        applyCheckpointClientState(checkpoint);
+        gameStore.apply({ ok: true, view: checkpoint.game, sessionId: checkpoint.sessionId });
+        liveTimelineStore.replaceLatestView(checkpoint.game);
+        syncRestoredPrompt(checkpoint.game);
+        replayStore.clear();
+        homeMode = 'play';
+      }
+      activeMatchRestoreState = 'reconnecting';
+      activeMatchRestoreMessage = restoreError instanceof Error
+        ? `対戦エンジンへ接続できません。${restoreError.message}`
+        : '対戦エンジンへ接続できません。';
+    } finally {
+      restoreRequestInFlight = false;
+    }
+  }
+
+  function applyCheckpointClientState(checkpoint: ActiveMatchCheckpointV1) {
+    restoredCheckpoint = checkpoint;
+    liveTimelineStore.restore(checkpoint.timeline);
+    knownDecksByPlayer = checkpoint.knownDecksByPlayer;
+    appliedKnownDeckLogKeys = [...checkpoint.appliedKnownDeckLogKeys];
+    applyCheckpointSelection(checkpoint);
+    selectionStore.clearAll();
+    zoneViewerStore.close();
+  }
+
+  function applyCheckpointSelection(checkpoint: ActiveMatchCheckpointV1) {
+    selectedPlayerDeckId = checkpoint.selection.playerDeckId;
+    selectedOpponentDeckId = checkpoint.selection.opponentDeckId;
+    selectedAgentId = checkpoint.selection.agentId;
+  }
+
+  function syncRestoredPrompt(restoredGame: GameView) {
+    promptLifecycleStore.syncPromptScopedState(restoredGame.prompts[0]);
+    promptLifecycleStore.resetCommandSelection(restoredGame.prompts.length);
+  }
+
+  async function retryActiveMatchRestore() {
+    const sessionId = restoredCheckpoint?.sessionId ?? readActiveSessionPointer()?.sessionId ?? '';
+    if (!sessionId) {
+      activeMatchRestoreState = 'invalid';
+      activeMatchRestoreMessage = '再開に必要な対戦セッション情報がありません。';
+      return;
+    }
+    activeMatchRestoreMessage = '対戦へ再接続しています。';
+    await restoreActiveMatch(sessionId, restoredCheckpoint);
+  }
+
+  function scheduleActiveMatchCheckpointSave(checkpoint: ActiveMatchCheckpointV1) {
+    restoredCheckpoint = checkpoint;
+    if (checkpointSaveTimer) {
+      clearTimeout(checkpointSaveTimer);
+    }
+    checkpointSaveTimer = setTimeout(() => {
+      checkpointSaveTimer = null;
+      checkpointWriteChain = checkpointWriteChain
+        .catch(() => undefined)
+        .then(() => activeMatchCheckpointRepository.save(checkpoint))
+        .then(() => {
+          checkpointSaveError = '';
+        })
+        .catch((saveError) => {
+          checkpointSaveError = saveError instanceof Error
+            ? `対戦の復帰用履歴を保存できません: ${saveError.message}`
+            : '対戦の復帰用履歴を保存できません。';
+        });
+    }, 0);
+  }
+
+  async function discardActiveMatch() {
+    activeMatchRestoreState = 'checking';
+    activeMatchRestoreMessage = '対戦を終了しています。';
+    const sessionId = localGameApi.currentSessionId()
+      || restoredCheckpoint?.sessionId
+      || readActiveSessionPointer()?.sessionId
+      || '';
+    localGameApi.forgetSession();
+    restoredCheckpoint = null;
+    if (checkpointSaveTimer) {
+      clearTimeout(checkpointSaveTimer);
+      checkpointSaveTimer = null;
+    }
+    try {
+      await checkpointWriteChain.catch(() => undefined);
+      await activeMatchCheckpointRepository.clear();
+    } catch (clearError) {
+      checkpointSaveError = clearError instanceof Error
+        ? `保存された対戦を削除できません: ${clearError.message}`
+        : '保存された対戦を削除できません。';
+    }
+    if (sessionId) {
+      void localGameApi.closeSession(sessionId).catch(() => undefined);
+    }
+    gameSessionStore.reset();
+    knownDecksByPlayer = {};
+    appliedKnownDeckLogKeys = [];
+    zoneViewerStore.close();
+    viewSettingsStore.resetView();
+    activeMatchRestoreState = 'ready';
+    activeMatchRestoreMessage = '';
+    homeMode = 'play';
+  }
 
   async function startGame() {
     if (selectedPlayerDeckId.startsWith('user:')) {
@@ -903,11 +1130,7 @@
       }
       return;
     }
-    gameSessionStore.reset();
-    knownDecksByPlayer = {};
-    appliedKnownDeckLogKeys = [];
-    zoneViewerStore.close();
-    viewSettingsStore.resetView();
+    void discardActiveMatch();
   }
 
   function dropToSlot(slot: PokemonSlotView, event: DragEvent) {
@@ -1373,7 +1596,7 @@
   }
 
   function canAct(playerIndex: number) {
-    if (replayMode || liveTimelineBrowsingPast) {
+    if (replayMode || liveTimelineBrowsingPast || activeMatchRestoreState !== 'ready') {
       return false;
     }
     return canPlayerAct({
@@ -1659,6 +1882,35 @@
         <span>{replayStore.loading ? '対戦リプレイの盤面を準備しています。' : labelFor(error || 'リプレイを読み込めません。')}</span>
       </div>
     </section>
+  {:else if activeMatchRestoreState === 'checking' && !game}
+    <AppHeader workbenchUrl={workbenchReturnUrl} />
+    <section class="replay-loading-screen">
+      <div class="replay-loading-panel" role="status">
+        <strong>対戦を再開中</strong>
+        <span>{activeMatchRestoreMessage || '進行中の対戦を確認しています。'}</span>
+      </div>
+    </section>
+  {:else if activeMatchRestoreState === 'invalid' && !game}
+    <AppHeader workbenchUrl={workbenchReturnUrl} />
+    <section class="replay-loading-screen">
+      <div class="replay-loading-panel" role="alert">
+        <strong>以前の対戦を再開できません</strong>
+        <span>{activeMatchRestoreMessage}</span>
+        <button type="button" onclick={() => void discardActiveMatch()}>破棄してデッキ選択へ</button>
+      </div>
+    </section>
+  {:else if activeMatchRestoreState === 'reconnecting' && !game}
+    <AppHeader workbenchUrl={workbenchReturnUrl} />
+    <section class="replay-loading-screen">
+      <div class="replay-loading-panel" role="alert">
+        <strong>対戦へ接続できません</strong>
+        <span>{activeMatchRestoreMessage}</span>
+        <div class="restore-actions">
+          <button type="button" onclick={() => void retryActiveMatchRestore()}>再接続</button>
+          <button type="button" class="secondary" onclick={() => void discardActiveMatch()}>対戦を破棄</button>
+        </div>
+      </div>
+    </section>
   {:else if !game}
     <AppHeader workbenchUrl={workbenchReturnUrl} />
 
@@ -1930,6 +2182,21 @@
         />
       </BoardLayer>
     </TableShell>
+    {#if activeMatchRestoreState === 'reconnecting'}
+      <div class="session-reconnect-overlay" role="alert" aria-live="assertive">
+        <div class="session-reconnect-panel">
+          <strong>対戦へ再接続してください</strong>
+          <span>{activeMatchRestoreMessage}</span>
+          <div class="restore-actions">
+            <button type="button" onclick={() => void retryActiveMatchRestore()}>再接続</button>
+            <button type="button" class="secondary" onclick={() => void discardActiveMatch()}>対戦を破棄</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+    {#if checkpointSaveError}
+      <div class="checkpoint-warning" role="status">{checkpointSaveError}</div>
+    {/if}
   {:else}
     <AppHeader workbenchUrl={workbenchReturnUrl} />
     <section class="replay-loading-screen">
@@ -1972,6 +2239,73 @@
   .replay-loading-panel span {
     color: #566272;
     font-size: 13px;
+  }
+
+  .restore-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .restore-actions button,
+  .replay-loading-panel button {
+    min-height: 40px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 8px;
+    background: #2563eb;
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .restore-actions button.secondary {
+    background: #e5e7eb;
+    color: #1f2937;
+  }
+
+  .session-reconnect-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(10, 14, 20, 0.58);
+    backdrop-filter: blur(3px);
+  }
+
+  .session-reconnect-panel {
+    display: grid;
+    gap: 8px;
+    width: min(420px, calc(100vw - 32px));
+    padding: 18px;
+    border-radius: 12px;
+    background: #f7f8fa;
+    color: #1d232b;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.3);
+  }
+
+  .session-reconnect-panel span {
+    color: #566272;
+    font-size: 13px;
+  }
+
+  .checkpoint-warning {
+    position: fixed;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    z-index: 900;
+    max-width: min(420px, calc(100vw - 24px));
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #7f1d1d;
+    color: #fff;
+    font-size: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
   }
 
 </style>

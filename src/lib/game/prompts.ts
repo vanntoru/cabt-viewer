@@ -12,6 +12,7 @@ export type PromptClassName =
   | 'SelectPrompt'
   | 'SelectOptionPrompt'
   | 'ChooseAttackPrompt'
+  | 'CabtBoardChoicePrompt'
   | 'ChooseCardsPrompt'
   | 'ChoosePrizePrompt'
   | 'ChooseEnergyPrompt'
@@ -30,6 +31,7 @@ export type KnownPrompt =
   | (PromptView & { className: 'CoinFlipPrompt' })
   | (PromptView & { className: 'SelectPrompt' | 'SelectOptionPrompt'; fields: { values?: unknown[] } & Record<string, unknown> })
   | (PromptView & { className: 'ChooseAttackPrompt' })
+  | (PromptView & { className: 'CabtBoardChoicePrompt' })
   | (PromptView & { className: 'ChooseCardsPrompt' })
   | (PromptView & { className: 'ChoosePrizePrompt' })
   | (PromptView & { className: 'ChooseEnergyPrompt' })
@@ -58,6 +60,7 @@ export function isKnownPrompt(prompt: PromptView): prompt is KnownPrompt {
     || prompt.className === 'SelectPrompt'
     || prompt.className === 'SelectOptionPrompt'
     || prompt.className === 'ChooseAttackPrompt'
+    || prompt.className === 'CabtBoardChoicePrompt'
     || prompt.className === 'ChooseCardsPrompt'
     || prompt.className === 'ChoosePrizePrompt'
     || prompt.className === 'ChooseEnergyPrompt'
