@@ -1,30 +1,142 @@
 {
   "agents": [
     {
+      "description": "Uses the first legal CABT selection whenever the local engine controls the opponent.",
       "id": "first-legal",
-      "name": "First legal option",
-      "description": "Uses the first legal CABT selection whenever the local engine controls the opponent."
+      "name": "First legal option"
     },
     {
+      "description": "Kaggle sample-submission policy: chooses a random legal option. Rule-based — auto-selects its Mega Abomasnow ex deck.",
       "id": "official-random-abomasnow",
       "name": "Official random sample (Mega Abomasnow)",
-      "description": "Kaggle sample-submission policy: chooses a random legal option. Rule-based — auto-selects its Mega Abomasnow ex deck.",
       "path": "public/agents/official-random-abomasnow/main.py",
       "preferredDeck": "kaggle-abomasnow"
     },
     {
+      "description": "Kaggle notebook sample: rule-based Mega Lucario ex that pivots between Lucario, Hariyama, and Solrock. Auto-selects its deck.",
       "id": "mega-lucario-ex",
       "name": "Rule-based Mega Lucario ex",
-      "description": "Kaggle notebook sample: rule-based Mega Lucario ex that pivots between Lucario, Hariyama, and Solrock. Auto-selects its deck.",
       "path": "public/agents/mega-lucario-ex/main.py",
       "preferredDeck": "kaggle-mega-lucario"
     },
     {
+      "description": "Kaggle notebook sample: rule-based Dragapult ex focused on early setup and Phantom Dive pressure. Auto-selects its deck.",
       "id": "dragapult-ex",
       "name": "Rule-based Dragapult ex",
-      "description": "Kaggle notebook sample: rule-based Dragapult ex focused on early setup and Phantom Dive pressure. Auto-selects its deck.",
       "path": "public/agents/dragapult-ex/main.py",
       "preferredDeck": "kaggle-dragapult"
+    },
+    {
+      "description": "Frozen current source for alakazam; weight 12.",
+      "id": "ptcg-abc:alakazam",
+      "name": "PTCG-ABC | フーディン",
+      "path": ".ptcg-abc-human/agents/alakazam/main.py",
+      "preferredDeck": "alakazam"
+    },
+    {
+      "description": "Frozen current source for mega-lucario-ex; weight 22.",
+      "id": "ptcg-abc:mega-lucario-ex",
+      "name": "PTCG-ABC | メガルカリオex",
+      "path": ".ptcg-abc-human/agents/mega-lucario-ex/main.py",
+      "preferredDeck": "mega-lucario-ex"
+    },
+    {
+      "description": "Frozen current source for iono; weight 3.",
+      "id": "ptcg-abc:iono",
+      "name": "PTCG-ABC | ハラバリーex",
+      "path": ".ptcg-abc-human/agents/iono/main.py",
+      "preferredDeck": "iono"
+    },
+    {
+      "description": "Frozen current source for crustle-bot; weight 7.",
+      "id": "ptcg-abc:crustle-bot",
+      "name": "PTCG-ABC | イワパレス",
+      "path": ".ptcg-abc-human/agents/crustle-bot/main.py",
+      "preferredDeck": "crustle-bot"
+    },
+    {
+      "description": "Frozen current source for dragapult-ex; weight 11.",
+      "id": "ptcg-abc:dragapult-ex",
+      "name": "PTCG-ABC | ドラパルトex",
+      "path": ".ptcg-abc-human/agents/dragapult-ex/main.py",
+      "preferredDeck": "dragapult-ex"
+    },
+    {
+      "description": "Frozen current source for dragapult-original; weight 11.",
+      "id": "ptcg-abc:dragapult-original",
+      "name": "PTCG-ABC | ドラパルト（オリジナル）",
+      "path": ".ptcg-abc-human/agents/dragapult-original/main.py",
+      "preferredDeck": "dragapult-original"
+    },
+    {
+      "description": "Frozen current source for mega-abomasnow-ex; weight 3.",
+      "id": "ptcg-abc:mega-abomasnow-ex",
+      "name": "PTCG-ABC | メガユキノオーex",
+      "path": ".ptcg-abc-human/agents/mega-abomasnow-ex/main.py",
+      "preferredDeck": "mega-abomasnow-ex"
+    },
+    {
+      "description": "Frozen current source for comfey-chandelure-psychic-control; weight 4.",
+      "id": "ptcg-abc:comfey-chandelure-psychic-control",
+      "name": "PTCG-ABC | シャンデラLO",
+      "path": ".ptcg-abc-human/agents/comfey-chandelure-psychic-control/main.py",
+      "preferredDeck": "comfey-chandelure-psychic-control"
+    },
+    {
+      "description": "Frozen current source for mega-starmie-ex-cinderace-water-tempo-rank1-allfix-tempo5; weight 9.",
+      "id": "ptcg-abc:mega-starmie-ex-cinderace-water-tempo-rank1-allfix-tempo5",
+      "name": "PTCG-ABC | メガスターミーex+エースバーン",
+      "path": ".ptcg-abc-human/agents/mega-starmie-ex-cinderace-water-tempo-rank1-allfix-tempo5/main.py",
+      "preferredDeck": "mega-starmie-ex-cinderace-water-tempo-rank1-allfix-tempo5"
+    },
+    {
+      "description": "Frozen current source for archaludon-ex-steel-tempo-public-ai; weight 8.",
+      "id": "ptcg-abc:archaludon-ex-steel-tempo-public-ai",
+      "name": "PTCG-ABC | ブリジュラスex+エースバーン",
+      "path": ".ptcg-abc-human/agents/archaludon-ex-steel-tempo-public-ai/main.py",
+      "preferredDeck": "archaludon-ex-steel-tempo-public-ai"
+    },
+    {
+      "description": "Frozen current source for rank16-yomogi-mochi-imitation-ai-v9; weight 6.",
+      "id": "ptcg-abc:rank16-yomogi-mochi-imitation-ai-v9",
+      "name": "PTCG-ABC | ホップのオーロット",
+      "path": ".ptcg-abc-human/agents/rank16-yomogi-mochi-imitation-ai-v9/main.py",
+      "preferredDeck": "rank16-yomogi-mochi-imitation-ai-v9"
+    },
+    {
+      "description": "Frozen current source for marnies-grimmsnarl-ex-common-system-rule-ai; weight 7.",
+      "id": "ptcg-abc:marnies-grimmsnarl-ex-common-system-rule-ai",
+      "name": "PTCG-ABC | マリィミラー",
+      "path": ".ptcg-abc-human/agents/marnies-grimmsnarl-ex-common-system-rule-ai/main.py",
+      "preferredDeck": "marnies-grimmsnarl-ex-common-system-rule-ai"
+    },
+    {
+      "description": "Frozen current source for cubchoo-lock-ai; weight 4.",
+      "id": "ptcg-abc:cubchoo-lock-ai",
+      "name": "PTCG-ABC | クマシュン+スボミー",
+      "path": ".ptcg-abc-human/agents/cubchoo-lock-ai/main.py",
+      "preferredDeck": "cubchoo-lock-ai"
+    },
+    {
+      "description": "Frozen current source for team-rocket-mewtwo-a915-public-f0-consensus-veto-limited-assist-v17; weight 1.",
+      "id": "ptcg-abc:team-rocket-mewtwo-a915-public-f0-consensus-veto-limited-assist-v17",
+      "name": "PTCG-ABC | ロケット団のミュウツーex",
+      "path": ".ptcg-abc-human/agents/team-rocket-mewtwo-a915-public-f0-consensus-veto-limited-assist-v17/main.py",
+      "preferredDeck": "team-rocket-mewtwo-a915-public-f0-consensus-veto-limited-assist-v17"
+    },
+    {
+      "description": "Frozen current source for mega-kangaskhan-67cf-public-f0-heal-reserve-bounded-attack-limited-v4; weight 1.",
+      "id": "ptcg-abc:mega-kangaskhan-67cf-public-f0-heal-reserve-bounded-attack-limited-v4",
+      "name": "PTCG-ABC | メガガルーラex",
+      "path": ".ptcg-abc-human/agents/mega-kangaskhan-67cf-public-f0-heal-reserve-bounded-attack-limited-v4/main.py",
+      "preferredDeck": "mega-kangaskhan-67cf-public-f0-heal-reserve-bounded-attack-limited-v4"
+    },
+    {
+      "description": "Frozen current source for cynthia-garchomp-public-state-reserve-priority-v110; weight 1.",
+      "id": "ptcg-abc:cynthia-garchomp-public-state-reserve-priority-v110",
+      "name": "PTCG-ABC | シロナのガブリアスex",
+      "path": ".ptcg-abc-human/agents/cynthia-garchomp-public-state-reserve-priority-v110/main.py",
+      "preferredDeck": "cynthia-garchomp-public-state-reserve-priority-v110"
     }
   ]
 }

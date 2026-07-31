@@ -1,17 +1,683 @@
 {
   "logs": [
     {
+      "id": "local-20260730102707",
+      "name": "Local Replay takeover 7/30/2026, 7:27:07 PM",
+      "file": "local-20260730102707.json",
+      "createdAt": "2026-07-30T10:27:07.238Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730102415",
+      "name": "Local Replay takeover 7/30/2026, 7:24:15 PM",
+      "file": "local-20260730102415.json",
+      "createdAt": "2026-07-30T10:24:15.130Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730093419",
+      "name": "Local Replay takeover 7/30/2026, 6:34:19 PM",
+      "file": "local-20260730093419.json",
+      "createdAt": "2026-07-30T09:34:19.547Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730092205",
+      "name": "Local Replay takeover 7/30/2026, 6:22:05 PM",
+      "file": "local-20260730092205.json",
+      "createdAt": "2026-07-30T09:22:05.355Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730075351",
+      "name": "Local Replay takeover 7/30/2026, 4:53:51 PM",
+      "file": "local-20260730075351.json",
+      "createdAt": "2026-07-30T07:53:51.676Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730071602",
+      "name": "Local Replay takeover 7/30/2026, 4:16:02 PM",
+      "file": "local-20260730071602.json",
+      "createdAt": "2026-07-30T07:16:02.532Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730064557",
+      "name": "Local Replay takeover 7/30/2026, 3:45:57 PM",
+      "file": "local-20260730064557.json",
+      "createdAt": "2026-07-30T06:45:57.093Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730063905",
+      "name": "Local Replay takeover 7/30/2026, 3:39:05 PM",
+      "file": "local-20260730063905.json",
+      "createdAt": "2026-07-30T06:39:05.464Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730062838",
+      "name": "Local Replay takeover 7/30/2026, 3:28:38 PM",
+      "file": "local-20260730062838.json",
+      "createdAt": "2026-07-30T06:28:38.975Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730061839",
+      "name": "Local Replay takeover 7/30/2026, 3:18:39 PM",
+      "file": "local-20260730061839.json",
+      "createdAt": "2026-07-30T06:18:39.267Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730061702",
+      "name": "Local Replay takeover 7/30/2026, 3:17:02 PM",
+      "file": "local-20260730061702.json",
+      "createdAt": "2026-07-30T06:17:02.006Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730055455",
+      "name": "Local Replay takeover 7/30/2026, 2:54:55 PM",
+      "file": "local-20260730055455.json",
+      "createdAt": "2026-07-30T05:54:55.741Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730054359",
+      "name": "Local Replay takeover 7/30/2026, 2:43:59 PM",
+      "file": "local-20260730054359.json",
+      "createdAt": "2026-07-30T05:43:59.353Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730052651",
+      "name": "Local Replay takeover 7/30/2026, 2:26:51 PM",
+      "file": "local-20260730052651.json",
+      "createdAt": "2026-07-30T05:26:51.000Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730051841",
+      "name": "Local Replay takeover 7/30/2026, 2:18:41 PM",
+      "file": "local-20260730051841.json",
+      "createdAt": "2026-07-30T05:18:41.016Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730040455",
+      "name": "Local Replay takeover 7/30/2026, 1:04:55 PM",
+      "file": "local-20260730040455.json",
+      "createdAt": "2026-07-30T04:04:55.570Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730035437",
+      "name": "Local Replay takeover 7/30/2026, 12:54:37 PM",
+      "file": "local-20260730035437.json",
+      "createdAt": "2026-07-30T03:54:37.827Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730034632",
+      "name": "Local Replay takeover 7/30/2026, 12:46:32 PM",
+      "file": "local-20260730034632.json",
+      "createdAt": "2026-07-30T03:46:32.467Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730033210",
+      "name": "Local Replay takeover 7/30/2026, 12:32:10 PM",
+      "file": "local-20260730033210.json",
+      "createdAt": "2026-07-30T03:32:10.511Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730031526",
+      "name": "Local Replay takeover 7/30/2026, 12:15:26 PM",
+      "file": "local-20260730031526.json",
+      "createdAt": "2026-07-30T03:15:26.139Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730025941",
+      "name": "Local Replay takeover 7/30/2026, 11:59:41 AM",
+      "file": "local-20260730025941.json",
+      "createdAt": "2026-07-30T02:59:41.091Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730025207",
+      "name": "Local Replay takeover 7/30/2026, 11:52:07 AM",
+      "file": "local-20260730025207.json",
+      "createdAt": "2026-07-30T02:52:07.628Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730024439",
+      "name": "Local Replay takeover 7/30/2026, 11:44:39 AM",
+      "file": "local-20260730024439.json",
+      "createdAt": "2026-07-30T02:44:39.871Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730023035",
+      "name": "Local Replay takeover 7/30/2026, 11:30:35 AM",
+      "file": "local-20260730023035.json",
+      "createdAt": "2026-07-30T02:30:35.519Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730021555",
+      "name": "Local Replay takeover 7/30/2026, 11:15:55 AM",
+      "file": "local-20260730021555.json",
+      "createdAt": "2026-07-30T02:15:55.185Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730020759",
+      "name": "Local Replay takeover 7/30/2026, 11:07:59 AM",
+      "file": "local-20260730020759.json",
+      "createdAt": "2026-07-30T02:07:59.985Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730014910",
+      "name": "Local Replay takeover 7/30/2026, 10:49:10 AM",
+      "file": "local-20260730014910.json",
+      "createdAt": "2026-07-30T01:49:10.602Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730014223",
+      "name": "Local Replay takeover 7/30/2026, 10:42:23 AM",
+      "file": "local-20260730014223.json",
+      "createdAt": "2026-07-30T01:42:23.182Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730012230",
+      "name": "Local Replay takeover 7/30/2026, 10:22:30 AM",
+      "file": "local-20260730012230.json",
+      "createdAt": "2026-07-30T01:22:30.182Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260730010308",
+      "name": "Local Replay takeover 7/30/2026, 10:03:08 AM",
+      "file": "local-20260730010308.json",
+      "createdAt": "2026-07-30T01:03:08.489Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260730004135",
+      "name": "Local Replay takeover 7/30/2026, 9:41:35 AM",
+      "file": "local-20260730004135.json",
+      "createdAt": "2026-07-30T00:41:35.994Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729152508",
+      "name": "Local Replay takeover 7/30/2026, 12:25:08 AM",
+      "file": "local-20260729152508.json",
+      "createdAt": "2026-07-29T15:25:08.944Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729145816",
+      "name": "Local Replay takeover 7/29/2026, 11:58:16 PM",
+      "file": "local-20260729145816.json",
+      "createdAt": "2026-07-29T14:58:16.052Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729144214",
+      "name": "Local Replay takeover 7/29/2026, 11:42:14 PM",
+      "file": "local-20260729144214.json",
+      "createdAt": "2026-07-29T14:42:14.831Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729143307",
+      "name": "Local Replay takeover 7/29/2026, 11:33:07 PM",
+      "file": "local-20260729143307.json",
+      "createdAt": "2026-07-29T14:33:07.361Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729131156",
+      "name": "Local Replay takeover 7/29/2026, 10:11:56 PM",
+      "file": "local-20260729131156.json",
+      "createdAt": "2026-07-29T13:11:56.672Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729130157",
+      "name": "Local Replay takeover 7/29/2026, 10:01:57 PM",
+      "file": "local-20260729130157.json",
+      "createdAt": "2026-07-29T13:01:57.773Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729120009",
+      "name": "Local Replay takeover 7/29/2026, 9:00:09 PM",
+      "file": "local-20260729120009.json",
+      "createdAt": "2026-07-29T12:00:09.967Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729103842",
+      "name": "Local Replay takeover 7/29/2026, 7:38:42 PM",
+      "file": "local-20260729103842.json",
+      "createdAt": "2026-07-29T10:38:42.279Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729103548",
+      "name": "Local Replay takeover 7/29/2026, 7:35:48 PM",
+      "file": "local-20260729103548.json",
+      "createdAt": "2026-07-29T10:35:48.711Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729101258",
+      "name": "Local Replay takeover 7/29/2026, 7:12:58 PM",
+      "file": "local-20260729101258.json",
+      "createdAt": "2026-07-29T10:12:58.115Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729092153",
+      "name": "Local Replay takeover 7/29/2026, 6:21:53 PM",
+      "file": "local-20260729092153.json",
+      "createdAt": "2026-07-29T09:21:53.928Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729090415",
+      "name": "Local Replay takeover 7/29/2026, 6:04:15 PM",
+      "file": "local-20260729090415.json",
+      "createdAt": "2026-07-29T09:04:15.800Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729084648",
+      "name": "Local Replay takeover 7/29/2026, 5:46:48 PM",
+      "file": "local-20260729084648.json",
+      "createdAt": "2026-07-29T08:46:48.260Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729082831",
+      "name": "Local Replay takeover 7/29/2026, 5:28:31 PM",
+      "file": "local-20260729082831.json",
+      "createdAt": "2026-07-29T08:28:31.979Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729081729",
+      "name": "Local Replay takeover 7/29/2026, 5:17:29 PM",
+      "file": "local-20260729081729.json",
+      "createdAt": "2026-07-29T08:17:29.094Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729071340",
+      "name": "Local Replay takeover 7/29/2026, 4:13:40 PM",
+      "file": "local-20260729071340.json",
+      "createdAt": "2026-07-29T07:13:40.902Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729063520",
+      "name": "Local Replay takeover 7/29/2026, 3:35:20 PM",
+      "file": "local-20260729063520.json",
+      "createdAt": "2026-07-29T06:35:20.679Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729055711",
+      "name": "Local Replay takeover 7/29/2026, 2:57:11 PM",
+      "file": "local-20260729055711.json",
+      "createdAt": "2026-07-29T05:57:11.311Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729054658",
+      "name": "Local Replay takeover 7/29/2026, 2:46:58 PM",
+      "file": "local-20260729054658.json",
+      "createdAt": "2026-07-29T05:46:58.870Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729045410",
+      "name": "Local Replay takeover 7/29/2026, 1:54:10 PM",
+      "file": "local-20260729045410.json",
+      "createdAt": "2026-07-29T04:54:10.170Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729042051",
+      "name": "Local Replay takeover 7/29/2026, 1:20:51 PM",
+      "file": "local-20260729042051.json",
+      "createdAt": "2026-07-29T04:20:51.115Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729041322",
+      "name": "Local Replay takeover 7/29/2026, 1:13:22 PM",
+      "file": "local-20260729041322.json",
+      "createdAt": "2026-07-29T04:13:22.193Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729034520",
+      "name": "Local Replay takeover 7/29/2026, 12:45:20 PM",
+      "file": "local-20260729034520.json",
+      "createdAt": "2026-07-29T03:45:20.652Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260729025248",
+      "name": "Local Replay takeover 7/29/2026, 11:52:48 AM",
+      "file": "local-20260729025248.json",
+      "createdAt": "2026-07-29T02:52:48.832Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260729023236",
+      "name": "Local Replay takeover 7/29/2026, 11:32:36 AM",
+      "file": "local-20260729023236.json",
+      "createdAt": "2026-07-29T02:32:36.508Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260728235423",
+      "name": "Local Replay takeover 7/29/2026, 8:54:23 AM",
+      "file": "local-20260728235423.json",
+      "createdAt": "2026-07-28T23:54:23.035Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260728131209",
+      "name": "Local Replay takeover 7/28/2026, 10:12:09 PM",
+      "file": "local-20260728131209.json",
+      "createdAt": "2026-07-28T13:12:09.345Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
+      "id": "local-20260728124937",
+      "name": "Local Replay takeover 7/28/2026, 9:49:37 PM",
+      "file": "local-20260728124937.json",
+      "createdAt": "2026-07-28T12:49:37.665Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 0."
+    },
+    {
+      "id": "local-20260728123033",
+      "name": "Local Replay takeover 7/28/2026, 9:30:33 PM",
+      "file": "local-20260728123033.json",
+      "createdAt": "2026-07-28T12:30:33.802Z",
+      "players": [
+        "Player 1",
+        "Player 2"
+      ],
+      "description": "Saved local Replay takeover match, result 1."
+    },
+    {
       "id": "cabt-runner-sample",
       "name": "CABT runner sample",
       "file": "cabt-match.json",
-      "players": ["Runner policy", "Runner policy"],
+      "players": [
+        "Runner policy",
+        "Runner policy"
+      ],
       "description": "Raw CABT runner output from the local sample policy."
     },
     {
       "id": "kaggle-context-sample",
       "name": "Kaggle context sample",
       "file": "kaggle-context.json",
-      "players": ["Sample agent", "Sample agent"],
+      "players": [
+        "Sample agent",
+        "Sample agent"
+      ],
       "description": "Kaggle-environments context artifact for replay adapter testing."
     }
   ]
