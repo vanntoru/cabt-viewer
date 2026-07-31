@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -31,6 +32,15 @@ type BridgeResponse = {
   autoActions?: Array<number[] | null>;
   cards?: CabtCardData[];
   attacks?: CabtAttack[];
+  takeover?: {
+    schemaVersion: string;
+    worldMode: string;
+    seed: number;
+    rootActor: number;
+    humanSeat: number;
+    worldSha256: string;
+    world: Record<string, unknown>;
+  };
 };
 
 type PendingBridgeCall = {
@@ -39,6 +49,62 @@ type PendingBridgeCall = {
 };
 
 type PlayerControl = 'self' | 'agent';
+
+type HumanDemonstrationAction = {
+  step: number;
+  seat: number;
+  source: 'human' | 'agent';
+  indexes: number[];
+  beforeRawFrame: number;
+  turn: number | null;
+  turnActionCount: number | null;
+  selectContext: unknown;
+  minCount: number | null;
+  maxCount: number | null;
+  optionCount: number;
+};
+
+type HumanExperimentMetadata = {
+  schemaVersion: 'ptcg-human-experiment-v1';
+  collectionBatch: string;
+  startedAt: string;
+  humanSeat: number | null;
+  opponentSeat: number | null;
+  focusDeckSlug: string | null;
+  opponentDeckSlug: string | null;
+  opponentAgentId: string | null;
+  controls: PlayerControl[];
+  playerDeckSlugs: Array<string | null>;
+  playerAgentIds: Array<string | null>;
+  sourceSnapshotManifest: string | null;
+  sourceSnapshotSha256: string | null;
+  analysisSnapshotPath: string | null;
+  focusAgentSha256: string | null;
+  focusDeckSha256: string | null;
+  opponentAgentSha256: string | null;
+  opponentDeckSha256: string | null;
+};
+
+
+
+type HumanTakeoverMetadata = {
+  schemaVersion: 'ptcg-human-takeover-v1';
+  sourceReplayFile: string;
+  sourceReplayId: string | null;
+  sourceReplaySha256: string;
+  sourceStateIndex: number;
+  sourceTurn: number | null;
+  sourceActor: number;
+  humanSeat: number;
+  opponentSeat: number;
+  opponentAgentId: string;
+  worldMode: string;
+  worldSeed: number;
+  worldReceiptPath: string;
+  worldSha256: string;
+  originalResult: number | null;
+  startedAt: string;
+};
 
 type SaveReplayResponse = {
   ok: boolean;
@@ -104,6 +170,144 @@ const BRIDGE_PATH = path.join(FRONTEND_ROOT, 'src', 'engine', 'cabt_bridge.py');
 const GAME_LOGS_DIR = path.join(FRONTEND_ROOT, 'public', 'game-logs');
 const GAME_LOGS_MANIFEST = path.join(GAME_LOGS_DIR, 'logs.json');
 
+
+function sha256Text(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function safeReplayPath(value: unknown): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    throw new Error('A saved local replay file is required for takeover.');
+  }
+  const file = path.basename(value.trim());
+  if (!file.endsWith('.json')) {
+    throw new Error('Takeover supports saved local JSON replays only.');
+  }
+  const resolved = path.resolve(GAME_LOGS_DIR, file);
+  const root = `${path.resolve(GAME_LOGS_DIR)}${path.sep}`;
+  if (!resolved.startsWith(root) || !fs.existsSync(resolved)) {
+    throw new Error(`Saved replay not found: ${file}`);
+  }
+  return resolved;
+}
+
+function takeoverStateRoot(): string {
+  const configured = process.env.CABT_HUMAN_TAKEOVER_STATE_DIR;
+  if (!configured) {
+    throw new Error('CABT_HUMAN_TAKEOVER_STATE_DIR is not configured. Re-run the PTCG-ABC viewer setup.');
+  }
+  const resolved = path.resolve(configured);
+  fs.mkdirSync(resolved, { recursive: true });
+  return resolved;
+}
+
+function inferredAgentId(replay: any, seat: number, fallback?: string): string {
+  const experiment = replay?.experiment ?? {};
+  const direct = Array.isArray(experiment?.playerAgentIds) ? experiment.playerAgentIds[seat] : null;
+  if (typeof direct === 'string' && direct.trim()) {
+    return direct.trim();
+  }
+  if (experiment?.opponentSeat === seat && typeof experiment?.opponentAgentId === 'string') {
+    return experiment.opponentAgentId;
+  }
+  const slug = Array.isArray(experiment?.playerDeckSlugs) ? experiment.playerDeckSlugs[seat] : null;
+  if (typeof slug === 'string' && slug.trim()) {
+    return `ptcg-abc:${slug.trim()}`;
+  }
+  if (typeof fallback === 'string' && fallback.trim()) {
+    return fallback.trim();
+  }
+  throw new Error(`No frozen agent is recorded for seat ${seat + 1}. Select the matching opponent agent before takeover.`);
+}
+
+function writeTakeoverWorldReceipt(payload: {
+  sourceReplayFile: string;
+  sourceReplaySha256: string;
+  sourceStateIndex: number;
+  receipt: NonNullable<BridgeResponse['takeover']>;
+}): { path: string; sha256: string } {
+  const body = {
+    schemaVersion: 'ptcg-human-takeover-world-v1',
+    sourceReplayFile: payload.sourceReplayFile,
+    sourceReplaySha256: payload.sourceReplaySha256,
+    sourceStateIndex: payload.sourceStateIndex,
+    worldMode: payload.receipt.worldMode,
+    seed: payload.receipt.seed,
+    rootActor: payload.receipt.rootActor,
+    humanSeat: payload.receipt.humanSeat,
+    worldSha256: payload.receipt.worldSha256,
+    world: payload.receipt.world,
+    createdAt: new Date().toISOString(),
+  };
+  const json = `${JSON.stringify(body, null, 2)}\n`;
+  const digest = sha256Text(json);
+  const file = `takeover-${digest.slice(0, 20)}.json`;
+  const target = path.join(takeoverStateRoot(), file);
+  if (!fs.existsSync(target)) {
+    fs.writeFileSync(target, json, { mode: 0o600 });
+  }
+  return { path: target, sha256: digest };
+}
+
+function nullableText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readHumanSnapshotManifest(): any {
+  const manifestPath = nullableText(process.env.CABT_HUMAN_SNAPSHOT_MANIFEST);
+  if (!manifestPath || !fs.existsSync(manifestPath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+function snapshotReceipt(manifest: any, slug: string | null): any {
+  if (!slug || !Array.isArray(manifest?.decks)) {
+    return null;
+  }
+  return manifest.decks.find((row: any) => row?.slug === slug) ?? null;
+}
+
+function buildHumanExperiment(
+  payload: any,
+  controls: [PlayerControl, PlayerControl],
+): HumanExperimentMetadata {
+  const deckSlugs = [nullableText(payload?.player1?.deckId), nullableText(payload?.player2?.deckId)];
+  const agentIds = [nullableText(payload?.player1?.agentId), nullableText(payload?.player2?.agentId)];
+  const humanSeats = controls.flatMap((control, seat) => (control === 'self' ? [seat] : []));
+  const humanSeat = humanSeats.length === 1 ? humanSeats[0] : null;
+  const opponentSeat = humanSeat === null ? null : 1 - humanSeat;
+  const focusDeckSlug = humanSeat === null ? null : deckSlugs[humanSeat];
+  const opponentDeckSlug = opponentSeat === null ? null : deckSlugs[opponentSeat];
+  const manifest = readHumanSnapshotManifest();
+  const focusReceipt = snapshotReceipt(manifest, focusDeckSlug);
+  const opponentReceipt = snapshotReceipt(manifest, opponentDeckSlug);
+  return {
+    schemaVersion: 'ptcg-human-experiment-v1',
+    collectionBatch: nullableText(process.env.CABT_HUMAN_COLLECTION_BATCH) ?? 'unlabeled',
+    startedAt: new Date().toISOString(),
+    humanSeat,
+    opponentSeat,
+    focusDeckSlug,
+    opponentDeckSlug,
+    opponentAgentId: opponentSeat === null ? null : agentIds[opponentSeat],
+    controls: [...controls],
+    playerDeckSlugs: deckSlugs,
+    playerAgentIds: agentIds,
+    sourceSnapshotManifest: nullableText(process.env.CABT_HUMAN_SNAPSHOT_MANIFEST),
+    sourceSnapshotSha256: nullableText(process.env.CABT_HUMAN_SOURCE_SNAPSHOT_SHA256),
+    analysisSnapshotPath: nullableText(process.env.CABT_HUMAN_ANALYSIS_SNAPSHOT),
+    focusAgentSha256: nullableText(focusReceipt?.main_sha256),
+    focusDeckSha256: nullableText(focusReceipt?.deck_sha256),
+    opponentAgentSha256: nullableText(opponentReceipt?.main_sha256),
+    opponentDeckSha256: nullableText(opponentReceipt?.deck_sha256),
+  };
+}
+
 export class LocalEngineController {
   private readonly bridge: CabtBridgeClient;
   private observation: CabtObservation | null = null;
@@ -129,6 +333,9 @@ export class LocalEngineController {
   // eval graph can score BOTH seats' own-view lines (the seat-1 line needs
   // seat 1's hand, absent from the concealed playback frames).
   private rawFrames: CabtObservation[] = [];
+  private humanActions: HumanDemonstrationAction[] = [];
+  private humanExperiment: HumanExperimentMetadata | null = null;
+  private replayTakeover: HumanTakeoverMetadata | null = null;
   // Each seat's LAST raw decision observation (with its own hand), so the live
   // eval bar can score BOTH perspectives — the tracked seat's current decision
   // and the opponent's most recent one.
@@ -146,7 +353,7 @@ export class LocalEngineController {
 
   async handle(command: Command): Promise<EngineResponse> {
     try {
-      if (command.type !== 'startGame') {
+      if (command.type !== 'startGame' && command.type !== 'startTakeover') {
         this.assertSession(command.payload);
       }
       switch (command.type) {
@@ -154,6 +361,8 @@ export class LocalEngineController {
           return await this.start(command.payload);
         case 'state':
           return this.viewResponse();
+        case 'startTakeover':
+          return await this.startTakeover(command.payload);
         case 'select':
           return await this.select(command.payload);
         default:
@@ -188,6 +397,13 @@ export class LocalEngineController {
       // deck-conditioned observation encoding losslessly (a single observation
       // can't recover the full deck — prizes/deck stay hidden).
       decks: this.decks,
+      humanDemonstration: {
+        schemaVersion: 'ptcg-human-demonstration-v1',
+        controls: [...this.playerControls],
+        actions: this.humanActions,
+      },
+      experiment: this.humanExperiment,
+      takeover: this.replayTakeover,
       environment: {
         id,
         title: name,
@@ -341,8 +557,12 @@ export class LocalEngineController {
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
+    this.humanActions = [];
+    this.humanExperiment = null;
+    this.replayTakeover = null;
     this.rawObservationBySeat = [null, null];
     this.playerControls = playerControls;
+    this.humanExperiment = buildHumanExperiment(payload, playerControls);
     this.replayModeLabel = `${controlLabel(playerControls[0])} vs ${controlLabel(playerControls[1])}`;
     this.replayPlayerLabels = [
       payload?.player1?.name ?? 'Player 1',
@@ -359,6 +579,135 @@ export class LocalEngineController {
       agentPaths,
       agentControlled: playerControls.map((control) => control === 'agent'),
     }, { allowStart: true });
+    this.applyBridgeResponse(response);
+    return this.viewResponse();
+  }
+
+
+
+  private async startTakeover(payload: any): Promise<EngineResponse> {
+    const replayPath = safeReplayPath(payload?.replayFile);
+    const replayText = fs.readFileSync(replayPath, 'utf8');
+    const replay = JSON.parse(replayText);
+    const frames = Array.isArray(replay?.rawVisualize) && replay.rawVisualize.length
+      ? replay.rawVisualize
+      : replay?.visualize;
+    if (!Array.isArray(frames)) {
+      throw new Error('The saved replay has no CABT observation frames.');
+    }
+    const stateIndex = Number(payload?.stateIndex);
+    if (!Number.isInteger(stateIndex) || stateIndex < 0 || stateIndex >= frames.length) {
+      throw new Error(`Invalid takeover state index ${payload?.stateIndex}.`);
+    }
+    const rootObservation = frames[stateIndex];
+    if (!rootObservation?.search_begin_input) {
+      throw new Error('This replay state cannot be resumed: search_begin_input is unavailable.');
+    }
+    if (!rootObservation?.select || Number(rootObservation?.current?.result ?? -1) >= 0) {
+      throw new Error('Select a non-terminal replay decision before taking over.');
+    }
+    if (!Array.isArray(replay?.decks) || replay.decks.length !== 2) {
+      throw new Error('This replay does not contain both saved 60-card decks.');
+    }
+    const decks = [
+      resolveDeck(replay.decks[0], 'Saved player 1 deck'),
+      resolveDeck(replay.decks[1], 'Saved player 2 deck'),
+    ] as [number[], number[]];
+    const sourceActor = Number(rootObservation.current.yourIndex);
+    const requestedSeat = Number(payload?.humanSeat);
+    const humanSeat = requestedSeat === 0 || requestedSeat === 1 ? requestedSeat : sourceActor;
+    const opponentSeat = 1 - humanSeat;
+    const opponentAgentId = inferredAgentId(replay, opponentSeat, payload?.opponentAgentId);
+    const focusAgentId = inferredAgentId(replay, humanSeat, `ptcg-abc:${replay?.experiment?.focusDeckSlug ?? ''}`);
+    const agentIds = humanSeat === 0
+      ? [focusAgentId, opponentAgentId]
+      : [opponentAgentId, focusAgentId];
+    const controls: [PlayerControl, PlayerControl] = humanSeat === 0
+      ? ['self', 'agent']
+      : ['agent', 'self'];
+    const sourceReplaySha256 = sha256Text(replayText);
+    const seed = Number.parseInt(
+      sha256Text(`${sourceReplaySha256}:${stateIndex}:${humanSeat}`).slice(0, 12),
+      16,
+    );
+
+    this.bridge.stop();
+    this.sessionId = createSessionId();
+    this.decisionSeq = 0;
+    this.actionTimeline = [];
+    this.timelineId = 1;
+    this.normalizer = new LiveObservationNormalizer(concealedSeats(controls));
+    this.lastNewLogs = [];
+    this.passAnnounceState = { attackedThisTurn: false };
+    this.pendingSequence = [];
+    this.replayFrames = [];
+    this.rawFrames = [];
+    this.rawObservationBySeat = [null, null];
+    this.humanActions = [];
+    this.playerControls = controls;
+    this.decks = decks;
+    this.replayModeLabel = 'Replay takeover';
+    const names = replay?.environment?.info?.TeamNames;
+    this.replayPlayerLabels = Array.isArray(names) && names.length >= 2
+      ? [String(names[0]), String(names[1])]
+      : ['Player 1', 'Player 2'];
+    this.logs = [{
+      id: this.logId++,
+      message: `Started replay takeover at state ${stateIndex} as Player ${humanSeat + 1}.`,
+    }];
+
+    const response = await this.bridge.request({
+      command: 'startTakeover',
+      deck0: decks[0],
+      deck1: decks[1],
+      rootObservation,
+      humanSeat,
+      agentPaths: agentIds.map((id) => agentPathForId(id)),
+      seed,
+    }, { allowStart: true });
+    if (!response.takeover) {
+      throw new Error('CABT bridge did not return a takeover world receipt.');
+    }
+    const worldReceipt = writeTakeoverWorldReceipt({
+      sourceReplayFile: path.basename(replayPath),
+      sourceReplaySha256,
+      sourceStateIndex: stateIndex,
+      receipt: response.takeover,
+    });
+    const originalResult = Number(replay?.rawVisualize?.at?.(-1)?.current?.result
+      ?? replay?.visualize?.at?.(-1)?.current?.result);
+    this.replayTakeover = {
+      schemaVersion: 'ptcg-human-takeover-v1',
+      sourceReplayFile: path.basename(replayPath),
+      sourceReplayId: typeof replay?.environment?.id === 'string' ? replay.environment.id : null,
+      sourceReplaySha256,
+      sourceStateIndex: stateIndex,
+      sourceTurn: typeof rootObservation?.current?.turn === 'number' ? rootObservation.current.turn : null,
+      sourceActor,
+      humanSeat,
+      opponentSeat,
+      opponentAgentId,
+      worldMode: response.takeover.worldMode,
+      worldSeed: response.takeover.seed,
+      worldReceiptPath: worldReceipt.path,
+      worldSha256: response.takeover.worldSha256,
+      originalResult: Number.isFinite(originalResult) ? originalResult : null,
+      startedAt: new Date().toISOString(),
+    };
+    const sourceExperiment = replay?.experiment;
+    this.humanExperiment = sourceExperiment && typeof sourceExperiment === 'object'
+      ? {
+          ...sourceExperiment,
+          collectionBatch: nullableText(process.env.CABT_HUMAN_COLLECTION_BATCH)
+            ?? nullableText(sourceExperiment.collectionBatch)
+            ?? 'unlabeled',
+          startedAt: new Date().toISOString(),
+          humanSeat,
+          opponentSeat,
+          opponentAgentId,
+          controls: [...controls],
+        }
+      : null;
     this.applyBridgeResponse(response);
     return this.viewResponse();
   }
@@ -416,6 +765,19 @@ export class LocalEngineController {
       view: this.view(),
       sequence: sequence.length ? sequence : undefined,
       sessionId: this.sessionId || undefined,
+      takeover: this.replayTakeover
+        ? {
+            schemaVersion: this.replayTakeover.schemaVersion,
+            sourceReplayFile: this.replayTakeover.sourceReplayFile,
+            sourceReplayId: this.replayTakeover.sourceReplayId,
+            sourceStateIndex: this.replayTakeover.sourceStateIndex,
+            humanSeat: this.replayTakeover.humanSeat,
+            opponentSeat: this.replayTakeover.opponentSeat,
+            opponentAgentId: this.replayTakeover.opponentAgentId,
+            worldMode: this.replayTakeover.worldMode,
+            worldSha256: this.replayTakeover.worldSha256,
+          }
+        : undefined,
     };
   }
 
@@ -444,8 +806,29 @@ export class LocalEngineController {
     const actions = response.autoActions ?? [];
     const steps: GameView[] = [];
     let previous = this.observation;
+    let previousRaw = this.rawFrames.at(-1) ?? null;
     for (let index = 0; index < observations.length; index += 1) {
-      const { observation, newLogs } = this.normalizer.push(observations[index]);
+      const rawObservation = observations[index];
+      const selectedAction = actions[index] ?? null;
+      if (selectedAction && previousRaw?.current && previousRaw.select) {
+        const seat = previousRaw.current.yourIndex;
+        this.humanActions.push({
+          step: this.humanActions.length + 1,
+          seat,
+          source: this.playerControls[seat] === 'agent' ? 'agent' : 'human',
+          indexes: [...selectedAction],
+          beforeRawFrame: Math.max(0, this.rawFrames.length - 1),
+          turn: typeof previousRaw.current.turn === 'number' ? previousRaw.current.turn : null,
+          turnActionCount: typeof previousRaw.current.turnActionCount === 'number'
+            ? previousRaw.current.turnActionCount
+            : null,
+          selectContext: previousRaw.select.context,
+          minCount: typeof previousRaw.select.minCount === 'number' ? previousRaw.select.minCount : null,
+          maxCount: typeof previousRaw.select.maxCount === 'number' ? previousRaw.select.maxCount : null,
+          optionCount: previousRaw.select.option?.length ?? 0,
+        });
+      }
+      const { observation, newLogs } = this.normalizer.push(rawObservation);
       const previousObservation = previous;
       // The engine never logs ability usage; synthesize it from the selection
       // that produced this observation (and from a triggered attach), same as
@@ -457,6 +840,7 @@ export class LocalEngineController {
       this.replayFrames.push(observation);
       const rawObs = observations[index];
       this.rawFrames.push(rawObs);
+      previousRaw = rawObs;
       // Remember each seat's most recent decision (raw, with its hand) for the
       // live both-perspective bar.
       if (rawObs?.select && rawObs.current && (rawObs.current.yourIndex === 0 || rawObs.current.yourIndex === 1)) {
@@ -534,6 +918,9 @@ export class LocalEngineController {
     this.pendingSequence = [];
     this.replayFrames = [];
     this.rawFrames = [];
+    this.humanActions = [];
+    this.humanExperiment = null;
+    this.replayTakeover = null;
     this.rawObservationBySeat = [null, null];
     this.decks = [[], []];
     this.logs = [...this.logs, { id: this.logId++, message }];

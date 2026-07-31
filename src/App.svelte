@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import ActiveFocus from './lib/components/ActiveFocus.svelte';
   import AppHeader from './lib/components/AppHeader.svelte';
   import BoardLayer from './lib/components/BoardLayer.svelte';
+  import CardTile from './lib/components/CardTile.svelte';
   import EffectSelectorBanner from './lib/components/EffectSelectorBanner.svelte';
   import EndGamePrompt from './lib/components/EndGamePrompt.svelte';
   import EvalGraph from './lib/components/EvalGraph.svelte';
@@ -80,6 +81,17 @@
   let savingReplay = $state(false);
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
+  let loadedReplayFile = $state(initialSearchParam('replay'));
+  let takeoverBusy = $state(false);
+  let takeoverError = $state('');
+  let takeoverStatus = $state('');
+  // ptcg-card-inspector-v3
+  let inspectedCard = $state<any>(null);
+  // ptcg-phase2e-b1-queue-ui-v1
+  let phase2eQueueEntry = $state<any>(null);
+  let phase2eQueueError = $state('');
+  let phase2eQueueTotal = $state(0);
+  let phase2eQueueBatch = $state('');
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
   let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
   let animationScopeKey = $derived(replayMode
@@ -136,7 +148,7 @@
     void visualAssetsStore.loadConfiguredManifest();
     void refreshCatalog();
     if (initialReplayMode) {
-      void replayStore.loadSaved();
+      void loadInitialReplayAndQueue();
     }
     return stopThemeSync;
   });
@@ -322,6 +334,11 @@
     void evalStore.loadReplayCurve(frames, replayStore.decks, replayStore.honestSeats);
   });
   let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
+  let takeoverFrame = $derived(replayStore.observationFrames[replayStateIndex]);
+  let takeoverAvailable = $derived(!!loadedReplayFile
+    && !!takeoverFrame?.searchBeginInput
+    && !!takeoverFrame?.select
+    && Number((takeoverFrame?.current as any)?.result ?? -1) < 0);
   let oppIndex = $derived(topPlayer?.index ?? (viewIndex === 0 ? 1 : 0));
   let showEvalBar = $derived(replayMode ? evalStore.curveForSeat(viewIndex).length > 0 : evalStore.live);
   let evalBarPWin = $derived(replayMode ? evalStore.pWinAtState(replayStateIndex, viewIndex) : evalStore.pWin);
@@ -413,8 +430,92 @@
         player2Control,
         player1AgentId,
         player2AgentId,
+        player1DeckId: player1DeckSource,
+        player2DeckId: player2DeckSource,
       }),
     );
+  }
+
+
+  async function startReplayTakeover(forcedHumanSeat?: number) {
+    const step = replayStore.currentStep;
+    if (!step || !loadedReplayFile || !takeoverAvailable || takeoverBusy) {
+      return;
+    }
+    const humanSeat = forcedHumanSeat === 0 || forcedHumanSeat === 1
+      ? forcedHumanSeat
+      : viewIndex === 0 || viewIndex === 1 ? viewIndex : 0;
+    const fallbackOpponentAgentId = humanSeat === 0 ? player2AgentId : player1AgentId;
+    takeoverBusy = true;
+    takeoverError = '';
+    takeoverStatus = '';
+    try {
+      const response = await gameSessionStore.run(() => localGameApi.startTakeover(
+        loadedReplayFile,
+        step.stateIndex,
+        humanSeat,
+        fallbackOpponentAgentId,
+      ));
+      if (!response.ok) {
+        throw new Error(response.error || 'Unable to start replay takeover.');
+      }
+      replayStore.clear();
+      evalStore.clearReplay();
+      zoneViewerStore.close();
+      homeMode = 'play';
+      viewSettingsStore.followPlayer(response.takeover?.humanSeat ?? humanSeat);
+      takeoverStatus = response.takeover?.worldMode === 'determinized-public-root'
+        ? 'Interactive continuation started from the exact public state with a frozen deterministic hidden world.'
+        : 'Interactive continuation started.';
+    } catch (error) {
+      takeoverError = error instanceof Error ? error.message : String(error);
+    } finally {
+      takeoverBusy = false;
+    }
+  }
+
+
+  async function loadInitialReplayAndQueue() {
+    await replayStore.loadSaved();
+    const batch = initialSearchParam('batch');
+    const queuePath = batch === 'phase2e-b1-balanced-pilot-01'
+      ? '/phase2e-b1-queue.json'
+      : batch === 'phase2e-b2-expanded-01'
+        ? '/phase2e-b2-queue.json'
+        : '';
+    if (!queuePath) {
+      return;
+    }
+    try {
+      const response = await fetch(queuePath, { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error(`Queue metadata unavailable (${response.status}).`);
+      }
+      const queue = await response.json();
+      const rootId = initialSearchParam('root');
+      const entry = Array.isArray(queue?.entries)
+        ? queue.entries.find((item: any) => item?.root_id === rootId)
+        : null;
+      if (!entry) {
+        throw new Error(`Queue root not found: ${rootId || '(missing)'}`);
+      }
+      phase2eQueueEntry = entry;
+      phase2eQueueTotal = Number(queue.total_roots ?? queue.entries.length);
+      phase2eQueueBatch = batch;
+      const stateIndex = Number(entry.source_state_index);
+      const humanSeat = Number(entry.human_seat);
+      if (!Number.isInteger(stateIndex) || ![0, 1].includes(humanSeat)) {
+        throw new Error('Queue root metadata is invalid.');
+      }
+      replayStore.setStateIndex(stateIndex);
+      viewSettingsStore.followPlayer(humanSeat);
+      await tick();
+      if (initialSearchParam('autoTakeover') === '1') {
+        await startReplayTakeover(humanSeat);
+      }
+    } catch (error) {
+      phase2eQueueError = error instanceof Error ? error.message : String(error);
+    }
   }
 
   async function refreshCatalog() {
@@ -505,6 +606,9 @@
     lastKaggleDaySlug = '';
     lastKaggleEpisodeId = '';
     homeMode = 'logs';
+    loadedReplayFile = log.file || log.id;
+    takeoverError = '';
+    takeoverStatus = '';
     replaceReplayUrl(log.file || log.id);
     await replayStore.loadSaved(log.file || log.id);
   }
@@ -518,8 +622,33 @@
     lastKaggleDaySlug = day.slug;
     lastKaggleEpisodeId = episode.episodeId;
     homeMode = 'logs';
+    loadedReplayFile = '';
+    takeoverError = '';
+    takeoverStatus = '';
     replaceKaggleReplayUrl(day, episode, replayUrl);
     await replayStore.loadUrl(replayUrl);
+  }
+
+
+  onMount(() => {
+    const inspect = (event: Event) => {
+      const card = (event as CustomEvent<{ card?: unknown }>).detail?.card;
+      if (card) {
+        inspectedCard = card;
+      }
+    };
+    window.addEventListener('cabt-card-inspect', inspect);
+    return () => window.removeEventListener('cabt-card-inspect', inspect);
+  });
+
+  function closeCardInspector() {
+    inspectedCard = null;
+  }
+
+  function cardInspectorKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') {
+      closeCardInspector();
+    }
   }
 
   async function saveReplay() {
@@ -792,6 +921,8 @@
     saveReplayMessage = '';
     saveReplayError = '';
     savingReplay = false;
+    takeoverError = '';
+    takeoverStatus = '';
   }
 
   function showZone(
@@ -857,6 +988,17 @@
   <PromptGallery />
 {:else}
 <main>
+
+  {#if phase2eQueueEntry}
+    <aside class="phase2e-b1-queue" aria-label="Phase 2E collection progress">
+      <strong>{phase2eQueueBatch === 'phase2e-b2-expanded-01' ? 'Phase 2E-B2' : 'Phase 2E-B1'} · {phase2eQueueEntry.ordinal} / {phase2eQueueTotal} · {phase2eQueueEntry.opponent_name}</strong>
+      <span>seat {phase2eQueueEntry.human_seat} · {phase2eQueueEntry.root_id}</span>
+      <span>{saveReplayMessage ? '保存済み・検査待ち' : gameFinished ? 'Save replayを押してください' : 'この局面を最後までプレイしてください'}</span>
+      <span>{saveReplayMessage ? '次はCodexが準備' : '親AI/hidden非表示'}</span>
+    </aside>
+  {:else if phase2eQueueError}
+    <aside class="phase2e-b1-queue error" role="alert">{phase2eQueueError}</aside>
+  {/if}
   {#if replayMode && !game}
     <AppHeader />
     <section class="replay-loading-screen">
@@ -961,6 +1103,11 @@
           togglePlayback={() => replayStore.togglePlayback()}
           backToReplayHome={resetGame}
           copyForkPoint={() => void replayStore.copyForkPoint()}
+          {takeoverAvailable}
+          {takeoverBusy}
+          takeoverLabel={`Take over as ${bottomPlayer?.name ?? `Player ${viewIndex + 1}`}`}
+          takeoverError={takeoverError || takeoverStatus}
+          startTakeover={() => void startReplayTakeover()}
         />
         <div class="eval-graph-dock">
           <EvalGraph
@@ -1015,6 +1162,26 @@
         </PromptDock>
       {/if}
 
+
+      {#if inspectedCard}
+        <div
+          class="card-inspector"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${inspectedCard.name ?? 'Card'} enlarged`}
+          tabindex="-1"
+          onclick={closeCardInspector}
+          onkeydown={cardInspectorKeydown}
+        >
+          <div class="card-inspector-content" onclick={(event) => event.stopPropagation()}>
+            <CardTile card={inspectedCard} />
+            <button type="button" class="card-inspector-close" onclick={closeCardInspector} aria-label="Close enlarged card">
+              閉じる
+            </button>
+          </div>
+        </div>
+      {/if}
+
       <BoardLayer>
         <!-- Panels are keyed by player.index and rendered in a stable order, so
              the follow-active seat flip is a pure CSS reposition (side class)
@@ -1025,6 +1192,7 @@
         {#each game.players as panelPlayer (panelPlayer.index)}
           {@const isBottom = panelPlayer.index === bottomPlayer.index}
           <PlayerPanel side={isBottom ? 'bottom' : 'top'}>
+            <!-- ptcg-hand-selection-cancel-v1 -->
             <Hand
               player={panelPlayer}
               selectedHand={selectedHand}
@@ -1032,6 +1200,7 @@
               playableIndexes={playableIndexesFor(panelPlayer)}
               concealed={isBottom ? (!replayMode && !isSelfControlled(panelPlayer.index)) : true}
               onSelect={selectHandCard}
+              onCancel={() => selectionStore.setSelectedHand(null)}
               onDrag={onHandDrag}
               onDragEnd={clearDragState}
             />
@@ -1188,6 +1357,137 @@
     padding: 2px 16px;
     background: var(--surface-toolbar-bg);
     border-top: 1px solid var(--surface-toolbar-border);
+  }
+
+
+  .phase2e-b1-queue {
+    position: fixed;
+    z-index: 30;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 2px 10px;
+    width: min(880px, calc(100vw - 320px));
+    padding: 4px 10px;
+    border: 1px solid rgba(110, 231, 183, 0.55);
+    border-radius: 8px;
+    background: rgba(7, 18, 28, 0.94);
+    color: #d1fae5;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+    text-align: center;
+    font-size: 10px;
+    line-height: 1.2;
+  }
+
+  .phase2e-b1-queue strong {
+    color: #6ee7b7;
+    font-size: 11px;
+  }
+
+  .phase2e-b1-queue.error {
+    border-color: #fb7185;
+    color: #fecdd3;
+  }
+
+  @media (max-width: 640px) {
+    .phase2e-b1-queue {
+      top: max(4px, env(safe-area-inset-top));
+      width: max-content;
+      max-width: calc(100vw - 20px);
+      flex-wrap: nowrap;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .phase2e-b1-queue strong {
+      font-size: 10px;
+    }
+
+    .phase2e-b1-queue span:first-of-type {
+      max-width: 48px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .phase2e-b1-queue span:nth-of-type(n + 2) {
+      display: none;
+    }
+  }
+
+  /* ptcg-prompt-reveal-visibility-v1
+     A collapsed card-choice prompt is the user's request to inspect the
+     board. RevealSessionLayer otherwise keeps the looked-at cards hovering
+     over the field even though the prompt itself is hidden. Keep the reveal
+     session alive so reopening the prompt restores the same cards/selection,
+     but hide its visual layer while the prompt is collapsed. */
+  :global(.table-shell:has(.prompt-panel-collapsed) .deck-reveal-animation) {
+    visibility: hidden;
+  }
+
+
+  .card-inspector {
+    position: fixed;
+    z-index: 300;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding:
+      max(18px, env(safe-area-inset-top))
+      max(18px, env(safe-area-inset-right))
+      max(18px, env(safe-area-inset-bottom))
+      max(18px, env(safe-area-inset-left));
+    background: rgba(3, 8, 16, 0.78);
+    backdrop-filter: blur(5px);
+    pointer-events: auto;
+  }
+
+  .card-inspector-content {
+    position: relative;
+    width: min(420px, 86vw, calc((100vh - 64px) * 0.7159));
+    filter: drop-shadow(0 24px 50px rgba(0, 0, 0, 0.65));
+  }
+
+  .card-inspector-content :global(.card-tile) {
+    width: 100%;
+    border-radius: 12px;
+    cursor: default;
+    box-shadow: none;
+  }
+
+  .card-inspector-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    min-width: 54px;
+    min-height: 36px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.68);
+    border-radius: 999px;
+    background: rgba(7, 18, 28, 0.9);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 800;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.38);
+  }
+
+  @media (max-width: 640px) {
+    .card-inspector {
+      padding:
+        max(10px, env(safe-area-inset-top))
+        max(10px, env(safe-area-inset-right))
+        max(10px, env(safe-area-inset-bottom))
+        max(10px, env(safe-area-inset-left));
+    }
+
+    .card-inspector-content {
+      width: min(88vw, calc((100dvh - 32px) * 0.7159));
+    }
   }
 
 </style>

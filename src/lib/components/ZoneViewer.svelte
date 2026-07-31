@@ -41,7 +41,7 @@
     {#if cards.length}
       <div class="zone-card-grid">
         {#each cards as card, index}
-          <CardTile {card} compact faceDown={faceDown} testId={`zone-card-${index}`} />
+          <CardTile {card} compact faceDown={faceDown} inspectOnClick={!faceDown} testId={`zone-card-${index}`} />
         {/each}
       </div>
     {:else}

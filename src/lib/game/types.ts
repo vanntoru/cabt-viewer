@@ -208,11 +208,26 @@ export type GameView = {
   events: unknown[];
 };
 
+
+
+export type ReplayTakeoverView = {
+  schemaVersion: 'ptcg-human-takeover-v1';
+  sourceReplayFile: string;
+  sourceReplayId: string | null;
+  sourceStateIndex: number;
+  humanSeat: number;
+  opponentSeat: number;
+  opponentAgentId: string;
+  worldMode: string;
+  worldSha256: string;
+};
+
 export type EngineOk = {
   ok: true;
   view: GameView;
   sequence?: GameView[];
   sessionId?: string;
+  takeover?: ReplayTakeoverView;
 };
 
 export type EngineFailure = {

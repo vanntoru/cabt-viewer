@@ -11,6 +11,7 @@
     interactive?: boolean;
     faceDown?: boolean;
     playable?: boolean;
+    inspectOnClick?: boolean;
     damage?: number;
     testId?: string;
     onclick?: (event: MouseEvent) => void;
@@ -27,6 +28,7 @@
     interactive = false,
     faceDown = false,
     playable = false,
+    inspectOnClick = false,
     damage = 0,
     testId = '',
     onclick,
@@ -70,6 +72,19 @@
   function preventSelection(event: Event) {
     event.preventDefault();
   }
+
+  // ptcg-card-inspector-v3
+  function handleCardClick(event: MouseEvent) {
+    if (!faceDown && card && inspectOnClick) {
+      event.preventDefault();
+      event.stopPropagation();
+      window.dispatchEvent(new CustomEvent('cabt-card-inspect', {
+        detail: { card },
+      }));
+      return;
+    }
+    onclick?.(event);
+  }
 </script>
 
 {#if interactive}
@@ -78,6 +93,7 @@
     class:selected
     class:compact
     class:playable
+    class:inspectable={!faceDown && !!card && inspectOnClick}
     class={`card-tile ${typeClass}`}
     draggable={draggable && !disabled}
     {disabled}
@@ -85,8 +101,8 @@
     data-card-id={card?.id ?? undefined}
     data-card-serial={card?.serial ?? undefined}
     data-card-player-index={card?.playerIndex ?? undefined}
-    title={card?.fullName ?? label}
-    {onclick}
+    title={faceDown ? label : (card?.fullName ?? label)}
+    onclick={handleCardClick}
     {ondragstart}
     {ondragend}
     onselectstart={preventSelection}
@@ -113,12 +129,14 @@
     class:selected
     class:compact
     class:playable
+    class:inspectable={!faceDown && !!card && inspectOnClick}
     class={`card-tile ${typeClass}`}
     data-testid={testId || undefined}
     data-card-id={card?.id ?? undefined}
     data-card-serial={card?.serial ?? undefined}
     data-card-player-index={card?.playerIndex ?? undefined}
-    title={card?.fullName ?? label}
+    title={faceDown ? label : (card?.fullName ?? label)}
+    onclick={handleCardClick}
   >
     {#if showImage}
       <img src={imageUrl} alt="" loading="eager" decoding="sync" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
@@ -154,6 +172,10 @@
     background: #f7f8fa;
     box-shadow: 0 3px 8px rgba(23, 30, 38, 0.28);
     transition: transform 120ms ease, box-shadow 120ms ease, outline-color 120ms ease, filter 120ms ease;
+  }
+
+  .card-tile.inspectable {
+    cursor: zoom-in;
   }
 
   button.card-tile:hover:not(:disabled) {

@@ -17,6 +17,11 @@
     togglePlayback: () => void;
     backToReplayHome: () => void;
     copyForkPoint: () => void;
+    takeoverAvailable?: boolean;
+    takeoverBusy?: boolean;
+    takeoverLabel?: string;
+    takeoverError?: string;
+    startTakeover?: () => void;
   };
 
   let {
@@ -35,6 +40,11 @@
     togglePlayback,
     backToReplayHome,
     copyForkPoint,
+    takeoverAvailable = false,
+    takeoverBusy = false,
+    takeoverLabel = 'Take over here',
+    takeoverError = '',
+    startTakeover = () => {},
   }: Props = $props();
 
   let maxStepIndex = $derived(Math.max(0, replay.steps.length - 1));
@@ -125,6 +135,13 @@
       />
     </label>
     <button onclick={copyForkPoint}>{copiedForkPoint ? 'Fork point copied' : 'Copy fork point'}</button>
+    <button
+      class="takeover-button"
+      onclick={startTakeover}
+      disabled={!takeoverAvailable || takeoverBusy}
+      title={takeoverAvailable ? 'Start an interactive continuation from this decision.' : 'Select a saved local decision with a search seed.'}
+    >{takeoverBusy ? 'Preparing takeover…' : takeoverLabel}</button>
+    {#if takeoverError}<span class="takeover-error">{takeoverError}</span>{/if}
   </div>
 
   {#if payloadPreview}
@@ -319,6 +336,18 @@
   .state-controls button {
     height: 26px;
     padding: 0 9px;
+  }
+
+  .state-controls .takeover-button {
+    border-color: rgba(40, 122, 78, 0.55);
+    font-weight: 900;
+  }
+
+  .takeover-error {
+    color: #b42318;
+    font-size: 10px;
+    line-height: 1.25;
+    white-space: normal;
   }
 
   input[type='range'] {

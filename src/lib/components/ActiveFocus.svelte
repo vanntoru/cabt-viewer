@@ -160,11 +160,11 @@
         </div>
         <div class="attachment-rail">
           <div class="attachment-rail-card main-card" title={pokemon.fullName || pokemon.name}>
-            <CardTile card={pokemon} />
+            <CardTile card={pokemon} inspectOnClick />
           </div>
           {#each detailAttachments as card, index (`inspect-${card.id ?? card.fullName}-${index}`)}
             <div class="attachment-rail-card" title={card.fullName || card.name}>
-              <CardTile card={card} />
+              <CardTile card={card} inspectOnClick />
             </div>
           {/each}
         </div>
@@ -175,7 +175,7 @@
           {#if detailAttachments.length}
             {#each detailAttachments as card, index (`${card.id ?? card.fullName}-${index}`)}
               <div class={`attached-card ${attachmentClass(index)}`} title={card.fullName || card.name}>
-                <CardTile card={card} />
+                <CardTile card={card} inspectOnClick />
               </div>
             {/each}
           {/if}
@@ -190,7 +190,7 @@
               }
             }}
           >
-            <CardTile card={pokemon} />
+            <CardTile card={pokemon} inspectOnClick />
           </button>
         </div>
       </div>

@@ -32,7 +32,7 @@
     <div class="actions">
       {#if onsave}
         <button class="secondary" type="button" onclick={onsave} disabled={saveDisabled || saving}>
-          {saving ? 'Saving...' : saveMessage ? 'Saved' : 'Save match'}
+          {saving ? 'Saving...' : saveMessage ? 'Saved' : 'Save replay'}
         </button>
       {/if}
       <button type="button" onclick={onconfirm}>Back to main screen</button>

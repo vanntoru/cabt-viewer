@@ -14,6 +14,7 @@
     // else stays full-color and quietly inert (no gray-out).
     playableIndexes?: number[];
     onSelect: (playerIndex: number, handIndex: number) => void;
+    onCancel?: () => void;
     onDrag: (playerIndex: number, handIndex: number, event: DragEvent) => void;
     onDragEnd?: () => void;
   };
@@ -25,6 +26,7 @@
     concealed = false,
     playableIndexes = [],
     onSelect,
+    onCancel = () => {},
     onDrag,
     onDragEnd = () => {},
   }: Props = $props();
@@ -39,6 +41,24 @@
   let handElement = $state<HTMLDivElement>();
   let canScrollLeft = $state(false);
   let canScrollRight = $state(false);
+
+
+  // ptcg-hand-cancel-and-zoom-v1
+  function cancelFromHandBackground(event: MouseEvent) {
+    const target = event.target;
+    if (target instanceof Element && target.closest('.card-tile, .hand-card-zoom')) {
+      return;
+    }
+    onCancel();
+  }
+
+  function inspectCard(card: PlayerView['hand'][number], event: MouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    window.dispatchEvent(new CustomEvent('cabt-card-inspect', {
+      detail: { card },
+    }));
+  }
 
   function updateScrollIndicators() {
     if (!handElement || concealed) {
@@ -96,6 +116,7 @@
   data-card-count={player.hand.length}
   data-card-anchor={`player:${player.index}:hand`}
   onscroll={updateScrollIndicators}
+  onclick={cancelFromHandBackground}
 >
   {#each visibleHandEntries as entry (entry.key)}
     {@const card = entry.card}
@@ -127,6 +148,16 @@
           ondragend={onDragEnd}
         />
       </div>
+
+      {#if !concealed && selectedHand?.playerIndex === player.index && selectedHand.handIndex === index}
+        <button
+          type="button"
+          class="hand-card-zoom"
+          aria-label={`Enlarge ${card.name ?? 'card'}`}
+          title="カードを拡大"
+          onclick={(event) => inspectCard(card, event)}
+        >🔍</button>
+      {/if}
     </div>
   {/each}
 </div>
@@ -181,6 +212,7 @@
   }
 
   .hand-card-frame {
+    position: relative;
     flex: 0 0 auto;
     display: grid;
     place-items: center;
@@ -275,4 +307,24 @@
     padding-top: var(--hand-hover-clearance);
     padding-bottom: var(--hand-shadow-clearance);
   }
+
+  .hand-card-zoom {
+    position: absolute;
+    z-index: 8;
+    top: -5px;
+    right: -5px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    border-radius: 999px;
+    background: rgba(7, 18, 28, 0.94);
+    color: #fff;
+    font-size: 15px;
+    line-height: 1;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  }
+
 </style>

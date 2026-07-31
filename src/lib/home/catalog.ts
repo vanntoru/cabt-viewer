@@ -19,7 +19,7 @@ export type DeckOption = {
 export type GameLogEntry = {
   id: string;
   name: string;
-  file: string;
+  file?: string;
   createdAt?: string;
   players?: string[];
   description?: string;

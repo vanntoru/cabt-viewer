@@ -12,6 +12,8 @@ type StartOptions = {
   player2Control?: PlayerControl;
   player1AgentId?: string;
   player2AgentId?: string;
+  player1DeckId?: string;
+  player2DeckId?: string;
 };
 
 export type SaveReplayResponse = {
@@ -24,7 +26,7 @@ export type SaveReplayResponse = {
 let currentSessionId = '';
 
 async function send(command: Command): Promise<EngineResponse> {
-  const commandWithSession = command.type === 'startGame' || !currentSessionId
+  const commandWithSession = command.type === 'startGame' || command.type === 'startTakeover' || !currentSessionId
     ? command
     : {
         ...command,
@@ -65,18 +67,33 @@ export const localGameApi = {
           deck: player1Deck,
           control: player1Control,
           agentId: options.player1AgentId,
+          deckId: options.player1DeckId,
         },
         player2: {
           name: 'Player 2',
           deck: player2Deck,
           control: player2Control,
           agentId: options.player2AgentId,
+          deckId: options.player2DeckId,
         },
       },
     });
   },
 
-  // The one gameplay command: answer the current decision with option indexes.
+
+  startTakeover(
+    replayFile: string,
+    stateIndex: number,
+    humanSeat: number,
+    opponentAgentId?: string,
+  ) {
+    return send({
+      type: 'startTakeover',
+      payload: { replayFile, stateIndex, humanSeat, opponentAgentId },
+    });
+  },
+
+  // The one gameplay command: answer the engine's current select with option indexes.
   select(seq: number, indexes: number[]) {
     return send({ type: 'select', payload: { seq, indexes } });
   },

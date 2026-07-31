@@ -10,6 +10,7 @@ export type SetImageInfo = {
 };
 
 export type CardImageInput = {
+  id?: number;
   imageUrl?: string;
   cardImage?: string;
   set?: string;
@@ -55,7 +56,22 @@ export const setImageMap: Record<string, string | SetImageInfo> = {
   SVP: 'svp',
 };
 
+const LOCAL_JP_CARD_IMAGE_BASE = '/jp-card-images';
+
+const LOCAL_JP_CARD_IMAGE_VERSION = 'ptcg-abc-jp-1';
+
+function localJapaneseCardImageUrl(cardId: number | undefined): string | undefined {
+  if (typeof cardId !== 'number' || !Number.isFinite(cardId)) {
+    return undefined;
+  }
+  return `${LOCAL_JP_CARD_IMAGE_BASE}/${String(cardId).padStart(4, '0')}.jpg?v=${LOCAL_JP_CARD_IMAGE_VERSION}`;
+}
+
 export function resolveCardImageUrl(card: CardImageInput, config = cardImageConfigFromEnv()): string | undefined {
+  const localImageUrl = localJapaneseCardImageUrl(card.id);
+  if (localImageUrl) {
+    return localImageUrl;
+  }
   if (card.imageUrl || card.cardImage) {
     return card.imageUrl ?? card.cardImage;
   }
@@ -103,6 +119,10 @@ export function resolveCardBackImageUrlFromManifest(manifest: VisualAssetManifes
 }
 
 export function hasConfiguredCardImageSource(config = cardImageConfigFromEnv(), manifest?: VisualAssetManifest): boolean {
+  if (LOCAL_JP_CARD_IMAGE_BASE) {
+    return true;
+  }
+
   const cards = manifest?.cards;
   return !!cards?.template?.trim() || !!cards?.images || !!config.template?.trim();
 }

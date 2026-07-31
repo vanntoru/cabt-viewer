@@ -267,16 +267,19 @@
       {:else}
         <div class="log-list">
           {#each gameLogs as log}
-            <button type="button" disabled={busy} onclick={() => loadGameLog(log)}>
+            <button type="button" disabled={busy || !log.file} class:note-only={!log.file} onclick={() => log.file && loadGameLog(log)}>
               <span>
                 <strong>{log.name}</strong>
                 <small>{logPlayerLabel(log)}</small>
+                {#if log.description}
+                  <small>{log.description}</small>
+                {/if}
               </span>
               <span>
                 {#if log.createdAt}
                   <small>{log.createdAt}</small>
                 {/if}
-                <small>{log.file}</small>
+                <small>{log.file || 'note only'}</small>
               </span>
             </button>
           {/each}
@@ -469,6 +472,11 @@
     border-radius: 8px;
     text-align: left;
     background: var(--button-bg);
+  }
+
+  .log-list button.note-only {
+    cursor: default;
+    opacity: 1;
   }
 
   .log-list span {
