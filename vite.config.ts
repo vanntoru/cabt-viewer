@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const jpCardImageRoot = fileURLToPath(new URL('../card_viewer/images/', import.meta.url));
+const localEngineTarget = process.env.VITE_LOCAL_ENGINE_TARGET ?? 'http://localhost:8095';
 
 function localJapaneseCardImages(): Plugin {
   return {
@@ -54,7 +55,7 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/jp-card-images/, '/images'),
       },
       '/local-engine': {
-        target: 'http://localhost:8095',
+        target: localEngineTarget,
         changeOrigin: true,
       },
       '/cabt-artifacts': {

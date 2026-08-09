@@ -11,10 +11,13 @@
   "scripts": {
     "dev": "sh -c 'npm run dev:engine & engine_pid=$!; trap \"kill $engine_pid 2>/dev/null\" EXIT INT TERM; npm run dev:web'",
     "dev:lan": "sh -c 'npm run dev:engine:lan & engine_pid=$!; trap \"kill $engine_pid 2>/dev/null\" EXIT INT TERM; npm run dev:web:lan'",
+    "dev:tailscale": "sh -c 'npm run dev:engine:tailscale & engine_pid=$!; trap \"kill $engine_pid 2>/dev/null\" EXIT INT TERM; npm run dev:web:tailscale'",
     "dev:web": "vite --host 127.0.0.1 --port 5173",
     "dev:web:lan": "vite --host 0.0.0.0 --port 5173",
+    "dev:web:tailscale": "sh -c 'vite --host \"$CABT_BIND_HOST\" --port 5173'",
     "dev:engine": "tsx src/engine/server.ts",
     "dev:engine:lan": "LOCAL_ENGINE_HOST=0.0.0.0 tsx src/engine/server.ts",
+    "dev:engine:tailscale": "tsx src/engine/server.ts",
     "audit:animations": "tsx scripts/audit-animation-coverage.ts",
     "build": "tsc -p tsconfig.build.json && vite build",
     "generate:cabt-data": "python3 scripts/generate-cabt-metadata.py",
