@@ -52,6 +52,62 @@ describe('cabtReplayToSnapshot', () => {
     expect(snapshot.views).toHaveLength(1);
   });
 
+  it('preserves the saved focus seat for own-turn replay navigation', () => {
+    const snapshot = cabtReplayToSnapshot({
+      preferred_player_index: 1,
+      target_player_index: 0,
+      visualize: [{
+        current: {
+          turn: 1,
+          yourIndex: 0,
+          result: -1,
+          players: [{ active: [], bench: [], prize: [] }, { active: [], bench: [], prize: [] }],
+        },
+      }],
+    });
+
+    expect(snapshot.preferredPlayerIndex).toBe(1);
+  });
+
+  it('maps saved Phantom Dive probability telemetry onto its replay decision', () => {
+    const frame = (turn: number) => ({
+      current: {
+        turn,
+        yourIndex: 0,
+        result: -1,
+        players: [{ active: [], bench: [], prize: [] }, { active: [], bench: [], prize: [] }],
+      },
+    });
+    const snapshot = cabtReplayToSnapshot({
+      decision_telemetry: [{
+        step: 1,
+        state_index: 1,
+        player_index: 0,
+        telemetry: {
+          phantom_dive_t2_probability: {
+            own_turn: 2,
+            status: 'estimated_complete',
+            method: 'adaptive_native_macro_monte_carlo',
+            probability: 0.375,
+            confidence_interval_95: [0.31, 0.44],
+            evaluation_trials: 256,
+          },
+        },
+      }],
+      visualize: [frame(1), frame(1)],
+    });
+
+    expect(snapshot.steps.find((step) => step.stateIndex === 1)?.phantomDiveProbability).toEqual({
+      playerIndex: 0,
+      ownTurn: 2,
+      status: 'estimated_complete',
+      method: 'adaptive_native_macro_monte_carlo',
+      probability: 0.375,
+      confidenceInterval95: [0.31, 0.44],
+      evaluationTrials: 256,
+    });
+  });
+
   it('renders physical attached energy cards instead of provided energy units', () => {
     const snapshot = cabtReplayToSnapshot({
       visualize: [{

@@ -17,7 +17,12 @@ import { cabtLogsToTimeline } from './logFormat';
 import { CabtAreaType, CabtOptionType } from './types';
 import { resolveCardImageUrl } from '../game/cardImages';
 import { type ActionTimelineEvent, type CardView, type GameView, type LogView, type PlayerView, type PokemonSlotView } from '../game/types';
-import type { ReplayAnimationPhase, ReplaySnapshot, ReplayStep } from '../game/replay';
+import type {
+  ReplayAnimationPhase,
+  ReplayPhantomDiveProbability,
+  ReplaySnapshot,
+  ReplayStep,
+} from '../game/replay';
 
 type CardRow = {
   id: number;
@@ -124,6 +129,14 @@ type KaggleContext = {
 type CabtRunnerJson = {
   visualize?: CabtVisualizeFrame[];
   steps?: Array<{ index?: number; action?: unknown; observation?: unknown }>;
+  decision_telemetry?: Array<{
+    step?: unknown;
+    state_index?: unknown;
+    player_index?: unknown;
+    telemetry?: {
+      phantom_dive_t2_probability?: Record<string, unknown>;
+    };
+  }>;
 };
 
 const cardDatabase = new Map<number, CardRow>((cardRows as CardRow[]).map((card) => [card.id, card]));
@@ -291,9 +304,28 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     step.index = index;
     step.actionIndex = index === 0 ? null : index - 1;
   });
+  const probabilityByState = replayPhantomDiveProbabilities(input);
+  const probabilityStates = [...probabilityByState.keys()].sort((left, right) => left - right);
+  let previousStepState = -1;
+  for (const step of steps) {
+    let probabilityState: number | undefined;
+    for (const stateIndex of probabilityStates) {
+      if (stateIndex > step.stateIndex) {
+        break;
+      }
+      if (stateIndex > previousStepState) {
+        probabilityState = stateIndex;
+      }
+    }
+    step.phantomDiveProbability = probabilityState === undefined
+      ? undefined
+      : probabilityByState.get(probabilityState);
+    previousStepState = step.stateIndex;
+  }
 
   const finalView = views.at(-1);
   const winner = typeof finalView?.winner === 'number' ? finalView.winner : -1;
+  const preferredPlayerIndex = replayPreferredPlayerIndex(input);
   return {
     id: String(environment?.id ?? 'cabt-local-replay'),
     name: environment?.title ? `${environment.title} replay` : 'CABT replay',
@@ -303,10 +335,61 @@ export function cabtReplayToSnapshot(input: unknown): ReplaySnapshot {
     stateCount: views.length,
     actionCount: Math.max(0, steps.length - 1),
     turnCount: Math.max(...views.map((view) => view.turn), 0),
+    preferredPlayerIndex,
     cardNames: [...new Set([...cardDatabase.values()].map((card) => card.name))],
     views,
     steps,
   };
+}
+
+function replayPhantomDiveProbabilities(input: unknown): Map<number, ReplayPhantomDiveProbability> {
+  const result = new Map<number, ReplayPhantomDiveProbability>();
+  const decisions = (input as CabtRunnerJson)?.decision_telemetry;
+  if (!Array.isArray(decisions)) {
+    return result;
+  }
+  for (const decision of decisions) {
+    const stateIndex = numberField(decision?.state_index);
+    const playerIndex = numberField(decision?.player_index);
+    const source = decision?.telemetry?.phantom_dive_t2_probability;
+    if (stateIndex === undefined || playerIndex === undefined || !source) {
+      continue;
+    }
+    const probability = typeof source.probability === 'number' && Number.isFinite(source.probability)
+      ? source.probability
+      : undefined;
+    const interval = Array.isArray(source.confidence_interval_95)
+      ? source.confidence_interval_95.map((value) => (
+        typeof value === 'number' && Number.isFinite(value) ? value : undefined
+      ))
+      : [];
+    result.set(stateIndex, {
+      playerIndex,
+      ownTurn: numberField(source.own_turn) ?? 0,
+      status: String(source.status ?? ''),
+      method: String(source.method ?? ''),
+      probability: probability !== undefined && probability >= 0 && probability <= 1
+        ? probability
+        : null,
+      confidenceInterval95: interval.length === 2
+        && interval[0] !== undefined
+        && interval[1] !== undefined
+        ? [interval[0], interval[1]]
+        : null,
+      evaluationTrials: numberField(source.evaluation_trials) ?? 0,
+    });
+  }
+  return result;
+}
+
+function replayPreferredPlayerIndex(input: unknown): 0 | 1 {
+  const source = input as { preferred_player_index?: unknown; target_player_index?: unknown };
+  for (const value of [source?.preferred_player_index, source?.target_player_index]) {
+    if (value === 0 || value === 1) {
+      return value;
+    }
+  }
+  return 0;
 }
 
 type ReplayActionGroup = {

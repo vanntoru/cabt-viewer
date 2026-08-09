@@ -27,6 +27,7 @@
   import { formatCabtDeckList } from './lib/game/deckImport';
   import { labelFor } from './lib/game/labels';
   import { replayFollowPlayerForPosition } from './lib/game/replayFollow';
+  import { parseReplayPlaylist, playlistItemIndex, type ReplayPlaylistItem } from './lib/game/replayPlaylist';
   import cardRows from './lib/cabt/cardData.generated.json';
   import {
     boardDecisionOptions,
@@ -82,6 +83,7 @@
   let saveReplayMessage = $state('');
   let saveReplayError = $state('');
   let loadedReplayFile = $state(initialSearchParam('replay'));
+  let replayPlaylistItems = $state<ReplayPlaylistItem[]>([]);
   let takeoverBusy = $state(false);
   let takeoverError = $state('');
   let takeoverStatus = $state('');
@@ -93,6 +95,10 @@
   let phase2eQueueTotal = $state(0);
   let phase2eQueueBatch = $state('');
   let replayMode = $derived(homeMode === 'logs' && !!replayStore.replay);
+  let replayPlaylistIndex = $derived(playlistItemIndex(replayPlaylistItems, loadedReplayFile));
+  let replayPlaylistPosition = $derived(replayPlaylistIndex >= 0
+    ? `${replayPlaylistIndex + 1} / ${replayPlaylistItems.length}`
+    : '');
   let game = $derived(replayMode ? replayStore.currentView : gameStore.game);
   let animationScopeKey = $derived(replayMode
     ? `replay-${replayStore.stepIndex}-${replayStore.animationPhaseIndex}`
@@ -288,12 +294,17 @@
     }
   });
   $effect(() => {
-    if (!replayMode || !followActive) {
+    if (!replayMode || !followActive || replayStore.ownTurnsOnly) {
       return;
     }
     const playerIndex = replayFollowPlayerForPosition(replayStore.replay?.steps, replayStore.stepIndex);
     if (playerIndex !== undefined) {
       viewSettingsStore.followPlayer(playerIndex);
+    }
+  });
+  $effect(() => {
+    if (replayMode && replayStore.ownTurnsOnly) {
+      viewSettingsStore.switchToPlayer(replayStore.replay?.preferredPlayerIndex ?? 0);
     }
   });
   // Live eval bar: re-score MY seat's win probability on the ANIMATION clock,
@@ -334,6 +345,9 @@
     void evalStore.loadReplayCurve(frames, replayStore.decks, replayStore.honestSeats);
   });
   let replayStateIndex = $derived(replayStore.currentStep?.stateIndex ?? 0);
+  let replayTrackedPlayerIndex = $derived(replayStore.replay?.preferredPlayerIndex ?? 0);
+  let previousPlayerTurnStepIndex = $derived(replayStore.playerTurnStepIndex(replayTrackedPlayerIndex, -1));
+  let nextPlayerTurnStepIndex = $derived(replayStore.playerTurnStepIndex(replayTrackedPlayerIndex, 1));
   let takeoverFrame = $derived(replayStore.observationFrames[replayStateIndex]);
   let takeoverAvailable = $derived(!!loadedReplayFile
     && !!takeoverFrame?.searchBeginInput
@@ -364,6 +378,19 @@
   function computeJudgeLine(): void {
     void evalStore.analyzeOmniscient(
       replayStore.observationFrames, replayStore.decks, replayStore.honestSeats);
+  }
+  function toggleReplayOwnTurnsOnly(): void {
+    const enabled = !replayStore.ownTurnsOnly;
+    replayStore.setOwnTurnsOnly(enabled, replayTrackedPlayerIndex);
+    if (enabled) {
+      viewSettingsStore.switchToPlayer(replayTrackedPlayerIndex);
+    } else {
+      viewSettingsStore.followActive = true;
+      const playerIndex = replayFollowPlayerForPosition(replayStore.replay?.steps, replayStore.stepIndex);
+      if (playerIndex !== undefined) {
+        viewSettingsStore.followPlayer(playerIndex);
+      }
+    }
   }
   let gameFinished = $derived(game?.phase === 7);
   // "Opponent is thinking" indicator gate: a live game where I'm playing and the
@@ -476,7 +503,8 @@
 
 
   async function loadInitialReplayAndQueue() {
-    await replayStore.loadSaved();
+    await Promise.all([replayStore.loadSaved(), loadInitialReplayPlaylist()]);
+    prefetchAdjacentReplays();
     const batch = initialSearchParam('batch');
     const queuePath = batch === 'phase2e-b1-balanced-pilot-01'
       ? '/phase2e-b1-queue.json'
@@ -484,6 +512,7 @@
         ? '/phase2e-b2-queue.json'
         : '';
     if (!queuePath) {
+      restoreInitialReplayPosition();
       return;
     }
     try {
@@ -515,6 +544,51 @@
       }
     } catch (error) {
       phase2eQueueError = error instanceof Error ? error.message : String(error);
+    }
+    restoreInitialReplayPosition();
+  }
+
+  async function loadInitialReplayPlaylist() {
+    const playlistId = initialSearchParam('playlist');
+    replayPlaylistItems = [];
+    if (!playlistId) {
+      return;
+    }
+    try {
+      const response = await fetch(`/game-logs/playlists/${encodeURIComponent(playlistId)}.json`);
+      if (response.ok) {
+        replayPlaylistItems = parseReplayPlaylist(await response.json());
+      }
+    } catch {
+      replayPlaylistItems = [];
+    }
+  }
+
+  async function loadAdjacentReplay(direction: -1 | 1) {
+    const item = replayPlaylistItems[replayPlaylistIndex + direction];
+    if (item) {
+      await loadReplayFile(item.file);
+    }
+  }
+
+  function prefetchAdjacentReplays() {
+    for (const index of [replayPlaylistIndex - 1, replayPlaylistIndex + 1]) {
+      const file = replayPlaylistItems[index]?.file;
+      if (file) {
+        void fetch(`/game-logs/${encodeURIComponent(file)}`).catch(() => {});
+      }
+    }
+  }
+
+  function restoreInitialReplayPosition() {
+    const stepParam = initialSearchParam('step');
+    const stateParam = initialSearchParam('state');
+    const stepIndex = Number(stepParam);
+    const stateIndex = Number(stateParam);
+    if (stepParam && Number.isInteger(stepIndex)) {
+      replayStore.setStep(stepIndex);
+    } else if (stateParam && Number.isInteger(stateIndex)) {
+      replayStore.setStateIndex(stateIndex);
     }
   }
 
@@ -598,7 +672,7 @@
     }
   }
 
-  async function loadGameLog(log: GameLogEntry) {
+  async function loadReplayFile(replayFile: string) {
     gameSessionStore.reset();
     resetSaveReplayStatus();
     zoneViewerStore.close();
@@ -606,11 +680,16 @@
     lastKaggleDaySlug = '';
     lastKaggleEpisodeId = '';
     homeMode = 'logs';
-    loadedReplayFile = log.file || log.id;
+    loadedReplayFile = replayFile;
     takeoverError = '';
     takeoverStatus = '';
-    replaceReplayUrl(log.file || log.id);
-    await replayStore.loadSaved(log.file || log.id);
+    replaceReplayUrl(replayFile);
+    await replayStore.loadSaved(replayFile);
+    prefetchAdjacentReplays();
+  }
+
+  async function loadGameLog(log: GameLogEntry) {
+    await loadReplayFile(log.file || log.id);
   }
 
   async function loadKaggleEpisode(day: KaggleEpisodeDay, episode: KaggleEpisodeSummary) {
@@ -977,6 +1056,8 @@
     const params = new URLSearchParams(window.location.search);
     params.set('view', 'replay');
     params.set('replay', replayId);
+    params.delete('step');
+    params.delete('state');
     params.delete('replayUrl');
     params.delete('kaggleDay');
     params.delete('kaggleEpisode');
@@ -1081,7 +1162,7 @@
         resetPerspective={() => viewSettingsStore.resetPerspective()}
         {passTurn}
         {switchSides}
-        switchDisabled={!replayMode && actingPlayerIsSelf}
+        switchDisabled={replayStore.ownTurnsOnly || (!replayMode && actingPlayerIsSelf)}
         {resetGame}
         resetLabel={replayMode ? 'Exit replay' : 'Change decks'}
       />
@@ -1093,15 +1174,27 @@
           displayLabel={replayStore.currentDisplayLabel}
           stepIndex={replayStore.stepIndex}
           copiedForkPoint={replayStore.copiedForkPoint}
+          copyForkPointFailed={replayStore.copyForkPointFailed}
           isPlaying={replayStore.isPlaying}
           setStep={(index) => replayStore.setStep(index)}
           setStateIndex={(index) => replayStore.setStateIndex(index)}
           previousStep={() => replayStore.previousStep()}
           nextStep={() => replayStore.nextStep()}
+          previousPlayerTurn={() => replayStore.previousPlayerTurn(replayTrackedPlayerIndex)}
+          nextPlayerTurn={() => replayStore.nextPlayerTurn(replayTrackedPlayerIndex)}
+          canPreviousPlayerTurn={previousPlayerTurnStepIndex !== replayStore.stepIndex}
+          canNextPlayerTurn={nextPlayerTurnStepIndex !== replayStore.stepIndex}
+          ownTurnsOnly={replayStore.ownTurnsOnly}
+          toggleOwnTurnsOnly={toggleReplayOwnTurnsOnly}
           firstStep={() => replayStore.firstStep()}
           lastStep={() => replayStore.lastStep()}
           togglePlayback={() => replayStore.togglePlayback()}
           backToReplayHome={resetGame}
+          previousReplay={() => void loadAdjacentReplay(-1)}
+          nextReplay={() => void loadAdjacentReplay(1)}
+          canPreviousReplay={replayPlaylistIndex > 0}
+          canNextReplay={replayPlaylistIndex >= 0 && replayPlaylistIndex < replayPlaylistItems.length - 1}
+          playlistPosition={replayPlaylistPosition}
           copyForkPoint={() => void replayStore.copyForkPoint()}
           {takeoverAvailable}
           {takeoverBusy}

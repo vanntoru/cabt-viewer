@@ -108,7 +108,7 @@
     onselectstart={preventSelection}
   >
     {#if showImage}
-      <img src={imageUrl} alt="" loading="eager" decoding="sync" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
+      <img src={imageUrl} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
     {:else}
       <span class="fallback-card">
         <span class="fallback-kind">{typeLabel}</span>
@@ -139,7 +139,7 @@
     onclick={handleCardClick}
   >
     {#if showImage}
-      <img src={imageUrl} alt="" loading="eager" decoding="sync" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
+      <img src={imageUrl} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
     {:else}
       <span class="fallback-card">
         <span class="fallback-kind">{typeLabel}</span>

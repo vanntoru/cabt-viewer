@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import type { ReplaySnapshot, ReplayStep } from '../game/replay';
 
   type Props = {
@@ -12,11 +13,23 @@
     setStateIndex: (index: number) => void;
     previousStep: () => void;
     nextStep: () => void;
+    previousPlayerTurn: () => void;
+    nextPlayerTurn: () => void;
+    canPreviousPlayerTurn?: boolean;
+    canNextPlayerTurn?: boolean;
+    ownTurnsOnly?: boolean;
+    toggleOwnTurnsOnly?: () => void;
     firstStep: () => void;
     lastStep: () => void;
     togglePlayback: () => void;
     backToReplayHome: () => void;
+    previousReplay?: () => void;
+    nextReplay?: () => void;
+    canPreviousReplay?: boolean;
+    canNextReplay?: boolean;
+    playlistPosition?: string;
     copyForkPoint: () => void;
+    copyForkPointFailed?: boolean;
     takeoverAvailable?: boolean;
     takeoverBusy?: boolean;
     takeoverLabel?: string;
@@ -35,11 +48,23 @@
     setStateIndex,
     previousStep,
     nextStep,
+    previousPlayerTurn,
+    nextPlayerTurn,
+    canPreviousPlayerTurn = false,
+    canNextPlayerTurn = false,
+    ownTurnsOnly = false,
+    toggleOwnTurnsOnly = () => {},
     firstStep,
     lastStep,
     togglePlayback,
     backToReplayHome,
+    previousReplay = () => {},
+    nextReplay = () => {},
+    canPreviousReplay = false,
+    canNextReplay = false,
+    playlistPosition = '',
     copyForkPoint,
+    copyForkPointFailed = false,
     takeoverAvailable = false,
     takeoverBusy = false,
     takeoverLabel = 'Take over here',
@@ -56,6 +81,25 @@
   let createdLabel = $derived(Number.isFinite(replay.created) ? new Date(replay.created).toLocaleString() : '');
   let playerLabel = $derived(replay.players.map((player) => player.name).join(' vs '));
 
+  function percentLabel(value: number | null): string {
+    return value === null ? '算出不可' : `${(value * 100).toFixed(1)}%`;
+  }
+
+  function probabilityDetail(): string {
+    const probability = step.phantomDiveProbability;
+    if (!probability) {
+      return '';
+    }
+    if (probability.status === 'exact_complete') {
+      return '厳密値';
+    }
+    const interval = probability.confidenceInterval95;
+    if (probability.status === 'estimated_complete' && interval) {
+      return `推定・95%区間 ${percentLabel(interval[0])}–${percentLabel(interval[1])}`;
+    }
+    return '計算未完了';
+  }
+
   function onStepInput(event: Event) {
     setStep(Number((event.currentTarget as HTMLInputElement).value));
   }
@@ -71,17 +115,73 @@
     const json = JSON.stringify(payload);
     return json.length > 180 ? `${json.slice(0, 177)}...` : json;
   }
+
+  function isTextEntryTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) {
+      return false;
+    }
+    return target.isContentEditable || ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName);
+  }
+
+  onMount(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || isTextEntryTarget(event.target)) {
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        event.shiftKey ? previousPlayerTurn() : previousStep();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        event.shiftKey ? nextPlayerTurn() : nextStep();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
 </script>
 
 <button class="replay-back-button" aria-label="Back to replay list" onclick={backToReplayHome}>Back</button>
+{#if playlistPosition}
+  <nav class="replay-playlist-nav" aria-label="Replay playlist navigation">
+    <button aria-label="Previous replay" onclick={previousReplay} disabled={!canPreviousReplay}>前のリプレイ</button>
+    <span>{playlistPosition}</span>
+    <button aria-label="Next replay" onclick={nextReplay} disabled={!canNextReplay}>次のリプレイ</button>
+  </nav>
+{/if}
+<button
+  class="mobile-copy-fork-point"
+  class:below-playlist={!!playlistPosition}
+  aria-label="盤面情報をコピー"
+  onclick={copyForkPoint}
+>
+  {copiedForkPoint ? 'コピー済み' : copyForkPointFailed ? 'コピー失敗' : '盤面コピー'}
+</button>
 
 <section class="replay-dock" aria-label="Replay timeline">
   <div class="replay-caption" title={timelineLabel}>
     <span>{timelineLabel}</span>
+    {#if step.phantomDiveProbability}
+      <strong class="mobile-phantom-probability" aria-label="モバイル 2ターン目攻撃成功率">
+        2T攻撃 {percentLabel(step.phantomDiveProbability.probability)}
+      </strong>
+    {/if}
+    {#if ownTurnsOnly}
+      {#key step.turn}
+        <strong class="own-turn-status" aria-live="polite">自分 Turn {step.turn}</strong>
+      {/key}
+    {/if}
   </div>
   <div class="replay-controls" aria-label="Replay playback controls">
-    <button aria-label="First action" onclick={firstStep} disabled={stepIndex === 0}>|&lt;</button>
-    <button aria-label="Previous action" onclick={previousStep} disabled={stepIndex === 0}>&lt;</button>
+    <button class="edge-jump" aria-label="First action" onclick={firstStep} disabled={stepIndex === 0}>|&lt;</button>
+    <button
+      class="turn-jump"
+      aria-label="Previous tracked-player turn"
+      title="前の自分ターンへ（Shift+←）"
+      onclick={previousPlayerTurn}
+      disabled={!canPreviousPlayerTurn}
+    >自分←</button>
+    <button class="action-step" aria-label="Previous action" onclick={previousStep} disabled={stepIndex === 0}>戻る</button>
     <button
       class="playback-toggle"
       aria-label={isPlaying ? 'Pause replay' : 'Play replay'}
@@ -103,8 +203,22 @@
       value={stepIndex}
       oninput={onStepInput}
     />
-    <button aria-label="Next action" onclick={nextStep} disabled={stepIndex >= maxStepIndex}>&gt;</button>
-    <button aria-label="Last action" onclick={lastStep} disabled={stepIndex >= maxStepIndex}>&gt;|</button>
+    <button class="action-step" aria-label="Next action" onclick={nextStep} disabled={stepIndex >= maxStepIndex}>次へ</button>
+    <button
+      class="turn-jump"
+      aria-label="Next tracked-player turn"
+      title="次の自分ターンへ（Shift+→）"
+      onclick={nextPlayerTurn}
+      disabled={!canNextPlayerTurn}
+    >→自分</button>
+    <button class="edge-jump" aria-label="Last action" onclick={lastStep} disabled={stepIndex >= maxStepIndex}>&gt;|</button>
+    <button
+      class="own-turn-toggle"
+      aria-label="Show tracked-player turns only"
+      aria-pressed={ownTurnsOnly}
+      title="相手ターンを自動で飛ばし、盤面を自分側に固定"
+      onclick={toggleOwnTurnsOnly}
+    >自分ターンのみ</button>
   </div>
 </section>
 
@@ -114,6 +228,14 @@
     <span>{playerLabel}</span>
     <span>{createdLabel}</span>
   </div>
+
+  {#if step.phantomDiveProbability}
+    <div class="phantom-probability" aria-label="2ターン目攻撃成功率">
+      <span>2ターン目攻撃成功率</span>
+      <strong>{percentLabel(step.phantomDiveProbability.probability)}</strong>
+      <small>{probabilityDetail()}</small>
+    </div>
+  {/if}
 
   <div class="replay-readout">
     <span>Action <b>{actionValue}</b></span>
@@ -134,7 +256,9 @@
         oninput={onStateInput}
       />
     </label>
-    <button onclick={copyForkPoint}>{copiedForkPoint ? 'Fork point copied' : 'Copy fork point'}</button>
+    <button onclick={copyForkPoint}>
+      {copiedForkPoint ? 'Fork point copied' : copyForkPointFailed ? 'Copy failed' : 'Copy fork point'}
+    </button>
     <button
       class="takeover-button"
       onclick={startTakeover}
@@ -185,6 +309,36 @@
     font-weight: 850;
   }
 
+  .replay-playlist-nav {
+    position: absolute;
+    top: 14px;
+    left: 88px;
+    z-index: 16;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+  }
+
+  .replay-playlist-nav button {
+    height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--button-border);
+    border-radius: 5px;
+    background: var(--button-bg);
+    color: var(--button-text);
+    font-size: 11px;
+    font-weight: 850;
+  }
+
+  .replay-playlist-nav span {
+    min-width: 38px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 800;
+  }
+
   .replay-caption {
     position: absolute;
     left: 50%;
@@ -194,6 +348,7 @@
     display: flex;
     justify-content: center;
     pointer-events: none;
+    gap: 8px;
   }
 
   .replay-caption span {
@@ -212,6 +367,35 @@
     font-size: 13px;
     font-weight: 850;
     line-height: 1;
+  }
+
+  .own-turn-status {
+    flex: 0 0 auto;
+    padding: 7px 11px;
+    border: 1px solid color-mix(in srgb, var(--accent-base) 65%, var(--surface-toolbar-border));
+    border-radius: 999px;
+    background: var(--surface-toolbar-bg);
+    color: var(--accent-strong);
+    box-shadow: var(--surface-toolbar-shadow);
+    animation: own-turn-change 280ms ease-out;
+  }
+
+  .mobile-phantom-probability {
+    display: none;
+  }
+
+  .mobile-copy-fork-point {
+    display: none;
+  }
+
+  .own-turn-toggle[aria-pressed='true'] {
+    border-color: var(--accent-base);
+    color: var(--accent-strong);
+  }
+
+  @keyframes own-turn-change {
+    from { transform: scale(1.12); }
+    to { transform: scale(1); }
   }
 
   .replay-details {
@@ -241,6 +425,28 @@
     line-height: 1.2;
   }
 
+  .phantom-probability {
+    display: grid;
+    gap: 3px;
+    padding: 7px;
+    border: 1px solid color-mix(in srgb, var(--accent-base) 55%, var(--surface-toolbar-border));
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--accent-base) 8%, transparent);
+  }
+
+  .phantom-probability span,
+  .phantom-probability small {
+    color: var(--text-secondary);
+    font-size: 9px;
+    line-height: 1.25;
+  }
+
+  .phantom-probability strong {
+    color: var(--accent-strong);
+    font-size: 20px;
+    line-height: 1;
+  }
+
   .replay-meta span,
   .replay-readout span {
     min-width: 0;
@@ -261,7 +467,7 @@
   .replay-controls {
     width: 100%;
     display: grid;
-    grid-template-columns: 32px 32px 36px minmax(0, 1fr) 32px 32px;
+    grid-template-columns: 32px 52px 44px 36px minmax(60px, 1fr) 44px 52px 32px 96px;
     align-items: center;
     gap: 8px;
   }
@@ -285,6 +491,18 @@
 
   .replay-controls .playback-toggle {
     width: 36px;
+  }
+
+  .replay-controls .action-step {
+    width: 44px;
+  }
+
+  .replay-controls .turn-jump {
+    width: 52px;
+  }
+
+  .replay-controls .own-turn-toggle {
+    width: 96px;
   }
 
   .play-icon {
@@ -380,6 +598,21 @@
       font-size: 12px;
     }
 
+    .mobile-phantom-probability {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      padding: 6px 10px;
+      border: 1px solid color-mix(in srgb, var(--accent-base) 65%, var(--surface-toolbar-border));
+      border-radius: 999px;
+      background: var(--surface-toolbar-bg);
+      color: var(--accent-strong);
+      box-shadow: var(--surface-toolbar-shadow);
+      white-space: nowrap;
+      font-size: 12px;
+      line-height: 1;
+    }
+
     .replay-details {
       display: none;
     }
@@ -390,6 +623,83 @@
       height: 32px;
       min-width: 60px;
       padding: 0 12px;
+    }
+
+    .replay-playlist-nav {
+      top: 10px;
+      left: 78px;
+      height: 32px;
+    }
+
+    .replay-playlist-nav button {
+      height: 32px;
+      padding: 0 9px;
+    }
+
+    .mobile-copy-fork-point {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 16;
+      display: block;
+      height: 36px;
+      min-width: 92px;
+      padding: 0 12px;
+      border: 1px solid var(--button-border);
+      border-radius: 5px;
+      background: var(--button-bg);
+      color: var(--button-text);
+      box-shadow: var(--surface-toolbar-shadow);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    .mobile-copy-fork-point.below-playlist {
+      top: 50px;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .replay-dock {
+      padding: 7px 10px;
+    }
+
+    .replay-controls {
+      grid-template-columns: 44px 52px 44px minmax(24px, 1fr) 52px 44px 76px;
+      gap: 4px;
+    }
+
+    .replay-controls button {
+      height: 44px;
+      font-size: 11px;
+    }
+
+    .replay-controls .playback-toggle {
+      width: 44px;
+    }
+
+    .replay-controls .turn-jump {
+      width: 44px;
+      font-size: 10px;
+    }
+
+    .replay-controls .action-step {
+      width: 52px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .replay-controls .own-turn-toggle {
+      width: 76px;
+      font-size: 10px;
+    }
+
+    .replay-controls .edge-jump {
+      display: none;
+    }
+
+    .mobile-copy-fork-point {
+      min-height: 44px;
     }
   }
 </style>

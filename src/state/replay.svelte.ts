@@ -1,6 +1,15 @@
 import type { GameView } from '../lib/game/types';
-import { replayAnimationPhaseGapMs, replayStepPlaybackDelayMs, type ReplaySnapshot, type ReplayStep } from '../lib/game/replay';
+import {
+  adjacentPlayerTurnStepIndex,
+  playerStepIndexFrom,
+  replayAnimationPhaseGapMs,
+  replayStepPlaybackDelayMs,
+  type ReplaySnapshot,
+  type ReplayStep,
+} from '../lib/game/replay';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
+import { copyTextToClipboard } from '../lib/browser/clipboard';
+import { buildReplayForkPoint } from '../lib/game/replayForkPoint';
 
 // The raw per-state observation ({current, select}) the value head needs, kept
 // alongside the projected snapshot (which drops it). Frame index === stateIndex
@@ -23,7 +32,10 @@ class ReplayStore {
   loading = $state(false);
   error = $state('');
   copiedForkPoint = $state(false);
+  copyForkPointFailed = $state(false);
   isPlaying = $state(false);
+  ownTurnsOnly = $state(true);
+  trackedPlayerIndex = $state(0);
   // Raw observation frames + both seats' decks, for the eval graph. Empty when
   // the replay JSON predates deck persistence (legacy/Kaggle) — the graph then
   // degrades rather than lying (see evalStore).
@@ -115,13 +127,23 @@ class ReplayStore {
     this.loading = true;
     this.error = '';
     this.copiedForkPoint = false;
+    this.copyForkPointFailed = false;
     try {
       const loaded = await loadCabtReplay(candidates);
       this.replay = loaded.snapshot;
+      this.trackedPlayerIndex = loaded.snapshot.preferredPlayerIndex ?? 0;
       this.observationFrames = loaded.frames;
       this.decks = loaded.decks;
       this.honestSeats = loaded.honestSeats;
       this.stepIndex = 0;
+      if (this.ownTurnsOnly) {
+        this.stepIndex = playerStepIndexFrom(
+          loaded.snapshot.steps,
+          0,
+          this.trackedPlayerIndex,
+          1,
+        ) ?? 0;
+      }
       this.animationPhaseIndex = 0;
       this.scheduleAnimationPhase();
     } catch (error) {
@@ -151,6 +173,9 @@ class ReplayStore {
     this.loading = false;
     this.error = '';
     this.copiedForkPoint = false;
+    this.copyForkPointFailed = false;
+    this.ownTurnsOnly = true;
+    this.trackedPlayerIndex = 0;
   }
 
   // Arm scrub mode when navigation outpaces animation. Called on every setStep —
@@ -180,9 +205,31 @@ class ReplayStore {
 
   setStep(index: number): void {
     this.markNavigation();
-    this.stepIndex = clampIndex(index, this.maxStepIndex);
+    const requestedStepIndex = clampIndex(index, this.maxStepIndex);
+    if (this.ownTurnsOnly && this.replay) {
+      const direction: -1 | 1 = requestedStepIndex < this.stepIndex ? -1 : 1;
+      const visibleStepIndex = playerStepIndexFrom(
+        this.replay.steps,
+        requestedStepIndex,
+        this.trackedPlayerIndex,
+        direction,
+      );
+      if (visibleStepIndex !== null) {
+        this.stepIndex = visibleStepIndex;
+      } else if (this.currentStep?.activePlayerIndex !== this.trackedPlayerIndex) {
+        this.stepIndex = playerStepIndexFrom(
+          this.replay.steps,
+          requestedStepIndex,
+          this.trackedPlayerIndex,
+          direction === 1 ? -1 : 1,
+        ) ?? this.stepIndex;
+      }
+    } else {
+      this.stepIndex = requestedStepIndex;
+    }
     this.animationPhaseIndex = 0;
     this.copiedForkPoint = false;
+    this.copyForkPointFailed = false;
     this.scheduleAnimationPhase();
     if (this.stepIndex >= this.maxStepIndex) {
       this.pause();
@@ -202,11 +249,42 @@ class ReplayStore {
   }
 
   firstStep(): void {
+    if (this.ownTurnsOnly && this.replay) {
+      this.setStep(playerStepIndexFrom(this.replay.steps, 0, this.trackedPlayerIndex, 1) ?? 0);
+      return;
+    }
     this.setStep(0);
   }
 
   lastStep(): void {
+    if (this.ownTurnsOnly && this.replay) {
+      this.setStep(
+        playerStepIndexFrom(this.replay.steps, this.maxStepIndex, this.trackedPlayerIndex, -1)
+          ?? this.maxStepIndex,
+      );
+      return;
+    }
     this.setStep(this.maxStepIndex);
+  }
+
+  setOwnTurnsOnly(enabled: boolean, playerIndex: number): void {
+    this.trackedPlayerIndex = playerIndex === 1 ? 1 : 0;
+    this.ownTurnsOnly = enabled;
+    if (enabled) {
+      this.setStep(this.stepIndex);
+    }
+  }
+
+  playerTurnStepIndex(playerIndex: number, direction: -1 | 1): number {
+    return adjacentPlayerTurnStepIndex(this.replay?.steps ?? [], this.stepIndex, playerIndex, direction);
+  }
+
+  previousPlayerTurn(playerIndex: number): void {
+    this.setStep(this.playerTurnStepIndex(playerIndex, -1));
+  }
+
+  nextPlayerTurn(playerIndex: number): void {
+    this.setStep(this.playerTurnStepIndex(playerIndex, 1));
   }
 
   play(): void {
@@ -260,11 +338,12 @@ class ReplayStore {
   async copyForkPoint(): Promise<void> {
     const replay = this.replay;
     const step = this.currentStep;
-    if (!replay || !step || typeof navigator === 'undefined' || !navigator.clipboard) {
+    if (!replay || !step) {
       return;
     }
 
-    await navigator.clipboard.writeText(JSON.stringify({
+    const pageUrl = typeof window === 'undefined' ? 'http://localhost/' : window.location.href;
+    const copied = await copyTextToClipboard(JSON.stringify(buildReplayForkPoint({
       replayId: replay.id,
       replayName: replay.name,
       stepIndex: step.index,
@@ -272,8 +351,9 @@ class ReplayStore {
       actionIndex: step.actionIndex,
       actionType: step.type,
       turn: step.turn,
-    }));
-    this.copiedForkPoint = true;
+    }, pageUrl)));
+    this.copiedForkPoint = copied;
+    this.copyForkPointFailed = !copied;
   }
 
   private clearPlaybackTimer(): void {

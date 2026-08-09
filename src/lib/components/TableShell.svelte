@@ -86,4 +86,36 @@
   .table-shell :global(img) {
     -webkit-user-drag: none;
   }
+
+  @media (max-width: 860px) {
+    .table-shell.replay-mode {
+      --min-table-width: 100vw;
+      --board-right-rail: 0px;
+      --player-panel-right: 8px;
+      width: 100vw;
+      min-width: 0;
+      overflow-x: clip;
+    }
+
+    .table-shell.replay-mode :global(.table-toolbar) {
+      display: none;
+    }
+
+    .table-shell.replay-mode :global(.game-board-plane) {
+      transform: none;
+      will-change: auto;
+    }
+
+    .table-shell.replay-mode :global(*) {
+      animation-duration: 0s !important;
+      transition-duration: 0s !important;
+      backdrop-filter: none !important;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .table-shell.replay-mode {
+      --replay-dock-h: 58px;
+    }
+  }
 </style>
