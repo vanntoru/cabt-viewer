@@ -370,7 +370,7 @@
           class:opponent={animation.opponent}
           style={resolvingDiscardAnimationStyle(animation)}
         >
-          <CardTile card={animation.card} compact />
+          <CardTile card={animation.card} compact imageLoading="eager" />
         </span>
       {/each}
     </span>

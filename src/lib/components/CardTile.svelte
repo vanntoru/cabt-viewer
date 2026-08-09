@@ -12,6 +12,7 @@
     faceDown?: boolean;
     playable?: boolean;
     inspectOnClick?: boolean;
+    imageLoading?: 'eager' | 'lazy';
     damage?: number;
     testId?: string;
     onclick?: (event: MouseEvent) => void;
@@ -29,6 +30,7 @@
     faceDown = false,
     playable = false,
     inspectOnClick = false,
+    imageLoading = 'lazy',
     damage = 0,
     testId = '',
     onclick,
@@ -108,7 +110,7 @@
     onselectstart={preventSelection}
   >
     {#if showImage}
-      <img src={imageUrl} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
+      <img src={imageUrl} alt="" loading={imageLoading} decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
     {:else}
       <span class="fallback-card">
         <span class="fallback-kind">{typeLabel}</span>
@@ -139,7 +141,7 @@
     onclick={handleCardClick}
   >
     {#if showImage}
-      <img src={imageUrl} alt="" loading="lazy" decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
+      <img src={imageUrl} alt="" loading={imageLoading} decoding="async" draggable="false" onerror={() => (failedImageUrl = imageUrl ?? '')} />
     {:else}
       <span class="fallback-card">
         <span class="fallback-kind">{typeLabel}</span>

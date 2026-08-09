@@ -26,7 +26,7 @@ function localJapaneseCardImages(): Plugin {
         }
 
         res.setHeader('Content-Type', 'image/jpeg');
-        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         createReadStream(imagePath)
           .on('error', () => {
             if (!res.headersSent) {

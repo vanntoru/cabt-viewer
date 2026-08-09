@@ -686,7 +686,7 @@
           <span class="reveal-card-inner">
             <span class="reveal-card-face reveal-card-back" style={cardBackCssVar()}></span>
             <span class="reveal-card-face reveal-card-front">
-              <CardTile card={sprite.card} compact />
+              <CardTile card={sprite.card} compact imageLoading="eager" />
             </span>
           </span>
         </span>

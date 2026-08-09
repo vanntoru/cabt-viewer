@@ -612,7 +612,7 @@
       <span class="attached-move-sprite" style={spriteBaseStyle(sprite)}>
         <span class="attached-move-card">
           {#if sprite.motion.sprite.kind === 'card'}
-            <CardTile card={sprite.motion.sprite.card} compact />
+            <CardTile card={sprite.motion.sprite.card} compact imageLoading="eager" />
           {/if}
         </span>
       </span>
@@ -637,7 +637,7 @@
           <span class="deck-discard-face deck-discard-back" style={cardBackCssVar()}></span>
           <span class="deck-discard-face deck-discard-front">
             {#if sprite.motion.sprite.kind === 'flip-card'}
-              <CardTile card={sprite.motion.sprite.card} compact />
+              <CardTile card={sprite.motion.sprite.card} compact imageLoading="eager" />
             {/if}
           </span>
         </span>
@@ -659,7 +659,7 @@
           {#if sprite.motion.sprite.kind === 'slot'}
             <BoardSlot slot={sprite.motion.sprite.slot} active={sprite.motion.sprite.activeSize} />
           {:else if sprite.motion.sprite.kind === 'card'}
-            <CardTile card={sprite.motion.sprite.card} compact />
+            <CardTile card={sprite.motion.sprite.card} compact imageLoading="eager" />
           {/if}
         </span>
       </span>

@@ -1102,7 +1102,7 @@
       {:else}
         <span class="attack-ko-card" style={sprite.css}>
           <span class="attack-ko-card-frame">
-            <CardTile card={sprite.card} compact />
+            <CardTile card={sprite.card} compact imageLoading="eager" />
           </span>
         </span>
       {/if}
@@ -1127,7 +1127,7 @@
         <span class="draw-card-inner">
           <span class="flip-face flip-back" style={cardBackCssVar()}></span>
           <span class="flip-face flip-front" class:unrevealed={!sprite.reveal}>
-            <CardTile card={sprite.card} compact />
+            <CardTile card={sprite.card} compact imageLoading="eager" />
           </span>
         </span>
       </span>
@@ -1140,7 +1140,7 @@
         <span class="prize-take-card-inner">
           <span class="flip-face prize-back" style={cardBackCssVar()}></span>
           <span class="flip-face prize-front" class:unrevealed={!sprite.reveal}>
-            <CardTile card={sprite.card} compact />
+            <CardTile card={sprite.card} compact imageLoading="eager" />
           </span>
         </span>
       </span>
@@ -1156,7 +1156,7 @@
               <span class="flip-face reset-back" style={cardBackCssVar()}></span>
               {#if !sprite.concealed}
                 <span class="flip-face reset-front">
-                  <CardTile card={sprite.card} compact />
+                  <CardTile card={sprite.card} compact imageLoading="eager" />
                 </span>
               {/if}
             </span>
@@ -1170,7 +1170,7 @@
     {#each handPlaySprites as sprite (sprite.id)}
       <span class="hand-play-card" class:evolving={sprite.evolve} style={sprite.css}>
         <span class="hand-play-card-body">
-          <CardTile card={sprite.card} compact />
+          <CardTile card={sprite.card} compact imageLoading="eager" />
         </span>
       </span>
     {/each}

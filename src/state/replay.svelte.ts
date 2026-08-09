@@ -9,6 +9,7 @@ import {
 } from '../lib/game/replay';
 import { cabtReplayToSnapshot } from '../lib/cabt/cabtReplay';
 import { copyTextToClipboard } from '../lib/browser/clipboard';
+import { prefetchReplayCardImages } from '../lib/game/cardImagePrefetch';
 import { buildReplayForkPoint } from '../lib/game/replayForkPoint';
 
 // The raw per-state observation ({current, select}) the value head needs, kept
@@ -421,8 +422,10 @@ async function loadCabtReplay(candidates: string[]): Promise<LoadedReplay> {
         continue;
       }
       const json = await response.json();
+      const snapshot = cabtReplayToSnapshot(json);
+      prefetchReplayCardImages(snapshot);
       return {
-        snapshot: cabtReplayToSnapshot(json),
+        snapshot,
         frames: observationFramesFrom(json),
         decks: Array.isArray(json?.decks) ? json.decks : [],
         honestSeats: honestSeatsFrom(json),
